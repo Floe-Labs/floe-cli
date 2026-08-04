@@ -53,15 +53,19 @@ describe('main dispatch', () => {
     vi.stubGlobal('fetch', fetchSpy);
     vi.stubEnv('FLOE_API_KEY', 'floe_live_test');
     const dir = `${process.cwd()}/test/.tmp-config-amount-${process.pid}`;
-    vi.stubEnv('XDG_CONFIG_HOME', dir);
     const { mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+    rmSync(dir, { recursive: true, force: true });
     mkdirSync(`${dir}/floe`, { recursive: true });
     writeFileSync(`${dir}/floe/config.json`, JSON.stringify({ agentId: 'agent-1' }));
-    await main(['budget', 'set', 'not-a-number']);
-    rmSync(dir, { recursive: true, force: true });
-    expect(stderr).toContain('Invalid USD amount');
-    expect(process.exitCode).toBe(2);
-    expect(fetchSpy).not.toHaveBeenCalled();
+    vi.stubEnv('XDG_CONFIG_HOME', dir);
+    try {
+      await main(['budget', 'set', 'not-a-number']);
+      expect(stderr).toContain('Invalid USD amount');
+      expect(process.exitCode).toBe(2);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('fails budget set as a usage error, before any network call', async () => {
@@ -70,11 +74,18 @@ describe('main dispatch', () => {
     // Signed in (env key) but no agent configured in an empty config dir →
     // deterministic usage error regardless of the machine's keychain state.
     vi.stubEnv('FLOE_API_KEY', 'floe_live_test');
-    vi.stubEnv('XDG_CONFIG_HOME', `${process.cwd()}/test/.tmp-config-${process.pid}`);
-    await main(['budget', 'set', '5']);
-    expect(stderr).toContain('No agent configured');
-    expect(process.exitCode).toBe(2);
-    expect(fetchSpy).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
+    const dir = `${process.cwd()}/test/.tmp-config-${process.pid}`;
+    const { mkdirSync, rmSync } = await import('node:fs');
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir, { recursive: true });
+    vi.stubEnv('XDG_CONFIG_HOME', dir);
+    try {
+      await main(['budget', 'set', '5']);
+      expect(stderr).toContain('No agent configured');
+      expect(process.exitCode).toBe(2);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

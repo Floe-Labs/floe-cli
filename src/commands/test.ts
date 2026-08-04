@@ -1,7 +1,7 @@
 import { ApiError, FloeApi } from '../lib/api.js';
 import { readConfig, resolveApiUrl } from '../lib/config.js';
 import { resolveAgentKey } from '../lib/keychain.js';
-import { bold, cyan, dim, kv, ok, printJson } from '../lib/output.js';
+import { bold, cyan, dim, kv, ok, printJson, sanitizeText } from '../lib/output.js';
 import type { GatewayModel, ModelsResponse } from '../lib/types.js';
 import { rawToUsd } from '../lib/usdc.js';
 import { generateTestWav } from '../lib/wav.js';
@@ -132,11 +132,11 @@ export async function testCommand(flags: TestFlags): Promise<void> {
   process.stdout.write(`${ok(`Live metered ${flags.voice ? 'voice pipeline' : 'call'} through ${bold(apiUrl)}/v1`)}\n\n`);
   const rows: Array<[string, string]> = legs.map((l) => [
     l.leg,
-    `${cyan(l.model)}  ${bold(rawToUsd(l.costRaw))}`,
+    `${cyan(sanitizeText(l.model))}  ${bold(rawToUsd(l.costRaw))}`,
   ]);
   if (legs.length > 1) rows.push(['Total', bold(rawToUsd(totalRaw))]);
   process.stdout.write(`${kv(rows)}\n\n`);
-  process.stdout.write(`  ${dim('reply:')} ${reply}\n`);
+  process.stdout.write(`  ${dim('reply:')} ${sanitizeText(reply)}\n`);
   if (sttNote) process.stdout.write(`  ${dim(`note: ${sttNote}`)}\n`);
   if (budgetRemaining) process.stdout.write(`  ${dim('budget remaining:')} $${budgetRemaining}\n`);
   if (flags.voice) {

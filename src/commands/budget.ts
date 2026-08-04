@@ -39,7 +39,9 @@ export async function budgetShowCommand(flags: BudgetFlags): Promise<void> {
     api.dev<SpendLimitResponse>('GET', `/v1/developer/agents/${config.agentId}/spend-limit`),
     api.dev<{ keys: AgentKeySummary[] }>('GET', `/v1/developer/agents/${config.agentId}/keys`),
   ]);
-  const activeKey = keys.find((k) => k.id === config.keyId) ?? keys[0];
+  const activeKey = config.keyId
+    ? keys.find((k) => k.id === config.keyId)
+    : keys[0];
 
   if (flags.json) {
     printJson({ agentId: config.agentId, spendLimit, keyBudget: activeKey?.budget ?? null, keyId: activeKey?.id ?? null });

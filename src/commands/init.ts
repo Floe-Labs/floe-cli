@@ -95,7 +95,11 @@ async function pickAgent(
   if (active.length === 1 && active[0]) return { agent: active[0] };
 
   if (active.length > 1) {
-    if (!isInteractive()) return { agent: active[0]! };
+    if (!isInteractive()) {
+      throw new UsageError(
+        'Multiple active agents are available. Pass --agent <name> in non-interactive mode.',
+      );
+    }
     process.stdout.write('Which agent should this machine use?\n');
     active.forEach((a, i) => process.stdout.write(`  ${i + 1}. ${a.name} ${dim(a.id)}\n`));
     const answer = await ask(`Agent [1-${active.length}] (default 1): `);
@@ -208,8 +212,8 @@ export async function initCommand(flags: InitFlags): Promise<void> {
   if (welcomeCreditTxHash) {
     process.stdout.write(`${ok('Welcome credit deposited — your first calls are on Floe.')}\n`);
   }
-  if (mintedNewKey && process.env.FLOE_AGENT_KEY) {
-    process.stdout.write(`${warn('FLOE_AGENT_KEY is set and overrides the newly minted key for CLI commands.')}\n`);
+  if (process.env.FLOE_AGENT_KEY) {
+    process.stdout.write(`${warn('FLOE_AGENT_KEY is set and overrides the resolved agent key for CLI commands.')}\n`);
   }
   if (!mintedNewKey && !agentKey?.startsWith('floe_')) {
     process.stdout.write(`${warn('Stored agent key looks unusual — rerun with --new-key if calls fail.')}\n`);

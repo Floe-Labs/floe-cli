@@ -75,6 +75,14 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   const [command, subcommand, arg] = positionals;
   const common = { apiUrl: values['api-url'], json: values.json };
 
+  // Commands must consume every positional — extra arguments are a typo, and
+  // a typo must never silently reach a state-changing command.
+  const expectArgs = (max: number) => {
+    if (positionals.length > max) {
+      throw new UsageError(`Unexpected argument "${positionals[max]}".`);
+    }
+  };
+
   if (values.version) {
     process.stdout.write(`floe-cli/${cliVersion()}\n`);
     return;
@@ -87,6 +95,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   try {
     switch (command) {
       case 'init':
+        expectArgs(1);
         await initCommand({
           ...common,
           key: values.key,
@@ -97,9 +106,11 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
         });
         break;
       case 'status':
+        expectArgs(1);
         await statusCommand(common);
         break;
       case 'test':
+        expectArgs(1);
         await testCommand({
           ...common,
           voice: values.voice,
@@ -113,10 +124,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
         const flags = { ...common, per: values.per, task: values.task };
         if (subcommand === 'set') {
           if (!arg) throw new UsageError('Usage: floe budget set <usd> [--per day|task [--task <id>]]');
+          expectArgs(3);
           await budgetSetCommand(arg, flags);
         } else if (subcommand === 'clear') {
+          expectArgs(2);
           await budgetClearCommand(flags);
         } else if (subcommand === undefined || subcommand === 'show') {
+          expectArgs(2);
           await budgetShowCommand(flags);
         } else {
           throw new UsageError(`Unknown budget subcommand "${subcommand}". Use: show, set <usd>, clear.`);
@@ -125,8 +139,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
       }
       case 'keys': {
         if (subcommand === 'rotate') {
+          expectArgs(3);
           await keysRotateCommand(arg, common);
         } else if (subcommand === undefined || subcommand === 'list') {
+          expectArgs(2);
           await keysListCommand(common);
         } else {
           throw new UsageError(`Unknown keys subcommand "${subcommand}". Use: list, rotate [keyId].`);

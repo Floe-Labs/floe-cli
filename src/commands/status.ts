@@ -51,7 +51,9 @@ export async function statusCommand(flags: StatusFlags): Promise<void> {
       api.dev<SpendLimitResponse>('GET', `/v1/developer/agents/${agent.id}/spend-limit`),
     ]);
   }
-  const activeKey = keys.find((k) => k.id === config.keyId) ?? keys[0];
+  const activeKey = config.keyId
+    ? keys.find((k) => k.id === config.keyId)
+    : keys[0];
 
   if (flags.json) {
     printJson({

@@ -59,24 +59,35 @@ export async function keysRotateCommand(keyId: string | undefined, flags: KeysFl
   );
 
   const isThisMachinesKey = target === config.keyId || !keyId;
+  let storedLocally = false;
   if (isThisMachinesKey) {
-    await setSecret(agentKeyAccount(apiUrl), rotated.key);
-    writeConfig({ ...config, keyId: rotated.id, keyPrefix: rotated.keyPrefix });
+    try {
+      await setSecret(agentKeyAccount(apiUrl), rotated.key);
+      writeConfig({ ...config, keyId: rotated.id, keyPrefix: rotated.keyPrefix });
+      storedLocally = true;
+    } catch (err) {
+      // The old key is already revoked server-side — never swallow the
+      // replacement. Surface it once so the user can store it by hand.
+      process.stderr.write(
+        `${warn('Could not save the new key locally — copy it now (shown once):')}\n${bold(rotated.key)}\n` +
+          `${dim(`Reason: ${(err as Error).message}`)}\n`,
+      );
+    }
   }
 
   if (flags.json) {
     // The raw key is shown exactly once — here, for the caller that rotated it.
-    return printJson({ rotated: true, id: rotated.id, keyPrefix: rotated.keyPrefix, key: rotated.key, storedLocally: isThisMachinesKey });
+    return printJson({ rotated: true, id: rotated.id, keyPrefix: rotated.keyPrefix, key: rotated.key, storedLocally });
   }
   process.stdout.write(`${ok(`Key rotated → ${bold(rotated.keyPrefix)}`)}\n`);
-  if (isThisMachinesKey) {
+  if (storedLocally) {
     process.stdout.write(`${dim('New key stored in your keychain; the old key is revoked.')}\n`);
     if (process.env.FLOE_AGENT_KEY) {
       process.stdout.write(
         `${warn(`FLOE_AGENT_KEY is set and overrides the keychain — update it to the new key:`)}\n${bold(rotated.key)}\n`,
       );
     }
-  } else {
+  } else if (!isThisMachinesKey) {
     process.stdout.write(`New key (shown once): ${bold(rotated.key)}\n${dim('The old key is revoked — update whatever was using it.')}\n`);
   }
 }

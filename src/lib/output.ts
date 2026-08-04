@@ -31,4 +31,16 @@ export function kv(rows: Array<[string, string]>): string {
   return rows.map(([k, v]) => `  ${dim(k.padEnd(width))}  ${v}`).join('\n');
 }
 
+/**
+ * Strip terminal control sequences (OSC, CSI, stray C0 bytes) from untrusted
+ * text — model ids and LLM replies come from the network and must not be able
+ * to retitle the terminal or move the cursor. Keeps \n and \t.
+ */
+export function sanitizeText(s: string): string {
+  return s
+    .replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)?/g, '') // OSC ... BEL/ST
+    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, '') // CSI sequences
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, ''); // other C0 controls + DEL
+}
+
 export class UsageError extends Error {}
