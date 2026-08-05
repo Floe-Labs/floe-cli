@@ -1,0 +1,53 @@
+{
+  "name": "@floelabs/cli",
+  "version": "0.1.0",
+  "description": "Floe CLI — wire a metered Floe gateway key into your agent in one command",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "floe": "dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.17"
+  },
+  "packageManager": "pnpm@8.15.0",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "optionalDependencies": {
+    "@napi-rs/keyring": "^1.1.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^3.2.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Floe-Labs/floe-cli.git"
+  },
+  "homepage": "https://github.com/Floe-Labs/floe-cli#readme",
+  "bugs": {
+    "url": "https://github.com/Floe-Labs/floe-cli/issues"
+  },
+  "author": "Floe Labs",
+  "keywords": [
+    "floe",
+    "cli",
+    "x402",
+    "agents",
+    "llm-gateway",
+    "usdc"
+  ]
+}
