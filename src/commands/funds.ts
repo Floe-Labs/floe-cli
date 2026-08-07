@@ -436,9 +436,18 @@ async function watchForDeposit(api: FloeApi, baselineRaw: bigint): Promise<Watch
 export async function fundsTopupCommand(flags: FundsFlags): Promise<void> {
   let presetRaw: string | undefined;
   if (flags.amount !== undefined) presetRaw = usdToRaw(flags.amount);
-  // The onramp API takes fiat as a plain USD number; derived from the
-  // validated raw string so "abc" never reaches the network.
-  const presetFiat = presetRaw !== undefined ? Number(presetRaw) / 1e6 : undefined;
+  // The onramp API takes fiat as a plain USD number; derived from the validated
+  // raw string so "abc" never reaches the network. Guard the raw→Number step:
+  // a huge amount loses precision or becomes Infinity, which JSON emits as null,
+  // sending the wrong (or no) preset to the card checkout — reject it instead.
+  let presetFiat: number | undefined;
+  if (presetRaw !== undefined) {
+    const raw = Number(presetRaw);
+    if (!Number.isSafeInteger(raw)) {
+      throw new UsageError('--amount is too large to represent safely for the card checkout.');
+    }
+    presetFiat = raw / 1e6;
+  }
 
   const ctx = await devContext(flags);
   const geo = await ctx.api.dev<OnrampGeoResponse>('GET', '/v1/onramp/geo');
