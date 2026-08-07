@@ -181,8 +181,17 @@ export async function initCommand(flags: InitFlags): Promise<void> {
     keyId = minted.id;
     keyPrefix = minted.keyPrefix;
     mintedNewKey = true;
-    // Always persist the freshest key — env vars win at read time anyway.
-    await setSecret(agentKeyAccount(apiUrl, agent.id), agentKey);
+    // Always persist the freshest key — env vars win at read time anyway. The
+    // key is returned only once and has already consumed a server-side slot, so
+    // if local storage fails, surface it before bailing or it's unrecoverable.
+    try {
+      await setSecret(agentKeyAccount(apiUrl, agent.id), agentKey);
+    } catch (err) {
+      process.stderr.write(
+        `${warn('Could not save the new agent key locally — copy it now (shown once):')}\n${bold(agentKey)}\n`,
+      );
+      throw err;
+    }
   }
 
   writeConfig(

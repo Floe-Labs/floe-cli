@@ -17,6 +17,11 @@ export function parseDuration(input: string): number {
     );
   }
   const seconds = Number.parseInt(match[1]!, 10) * UNIT_SECONDS[match[2]!]!;
-  if (seconds <= 0) throw new UsageError('Duration must be greater than zero.');
+  // A huge but syntactically valid value (e.g. "99999999999999999999w") overflows
+  // to a non-safe integer / Infinity, which JSON.stringify emits as null — the API
+  // would then apply a different window than the operator asked for. Reject it.
+  if (!Number.isSafeInteger(seconds) || seconds <= 0) {
+    throw new UsageError('Duration must be a positive, safely representable number of seconds.');
+  }
   return seconds;
 }

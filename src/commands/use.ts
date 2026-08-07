@@ -49,7 +49,16 @@ export async function useCommand(ref: string, flags: { apiUrl?: string; json?: b
       }
       throw err;
     }
-    await setSecret(agentKeyAccount(ctx.apiUrl, agent.id), minted.key);
+    // The key is minted server-side (a slot is consumed) and returned only once.
+    // If local storage fails, print it before bailing or it's unrecoverable.
+    try {
+      await setSecret(agentKeyAccount(ctx.apiUrl, agent.id), minted.key);
+    } catch (err) {
+      process.stderr.write(
+        `${warn('Could not save the new key locally — copy it now (shown once):')}\n${bold(minted.key)}\n`,
+      );
+      throw err;
+    }
     keyId = minted.id;
     keyPrefix = minted.keyPrefix;
     mintedNewKey = true;

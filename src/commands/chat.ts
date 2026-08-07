@@ -119,6 +119,12 @@ async function streamDeltas(res: Response): Promise<void> {
       handleLine(buf.slice(0, idx).trimEnd());
       buf = buf.slice(idx + 1);
     }
+    // [DONE] terminates the protocol. Stop as soon as we see it — a gateway that
+    // holds the SSE socket open past the terminator would otherwise hang the CLI.
+    if (done) {
+      await reader.cancel().catch(() => {});
+      break;
+    }
   }
   buf += decoder.decode();
   if (buf.trim()) handleLine(buf.trim());

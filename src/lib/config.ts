@@ -70,8 +70,16 @@ export function readConfig(): CliConfig {
   let raw: string;
   try {
     raw = readFileSync(configPath(), 'utf8');
-  } catch {
-    return {};
+  } catch (err) {
+    // A missing file is a fresh install → empty config. But a permission/IO
+    // failure (EACCES/EIO/…) must NOT read as {} — a later command that writes
+    // would rename a new config over the unreadable one and lose every saved
+    // agent. Only ENOENT is "empty"; surface anything else.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw new UsageError(
+      `Cannot read config file ${configPath()}: ${(err as Error).message}. ` +
+        `Fix its permissions (or move it aside), then re-run.`,
+    );
   }
   try {
     const parsed: unknown = JSON.parse(raw);

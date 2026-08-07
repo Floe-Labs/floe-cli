@@ -125,7 +125,7 @@ env vars always win over the keychain. `FLOE_API_URL` overrides the API base.
 
 The CLI is a first-class surface for coding agents:
 
-- Every command takes `--json` and prints exactly what the API returned — parse, don't scrape.
+- Every command takes `--json` and emits stable, machine-readable JSON — parse it instead of scraping human output. (Metered commands wrap the API body with `model`/`cost` fields, and filtered lists are reconstructed, so it's a stable CLI schema, not always the raw API body.)
 - Nothing hangs on a prompt: non-interactive destructive calls fail fast with exit 2 unless
   `--yes` is passed.
 - Bootstrap without a keychain: export `FLOE_API_KEY` (and `FLOE_AGENT_KEY` for metered calls)
