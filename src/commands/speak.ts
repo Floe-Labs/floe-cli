@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { expectArgs, str, type CommandDef } from '../lib/command.js';
 import { agentContext } from '../lib/context.js';
-import { bold, kv, ok, printJson, UsageError } from '../lib/output.js';
+import { bold, kv, ok, printJson, sanitizeText, UsageError, warn } from '../lib/output.js';
 import { meterOf, meterRows, resolveGatewayModel } from './chat.js';
 
 const TTS_PREFERENCE = ['openai/tts-1'];
@@ -49,11 +49,13 @@ export async function speakCommand(text: string, flags: SpeakFlags): Promise<voi
   try {
     writeFileSync(out, audio);
   } catch (err) {
-    // The gateway call already succeeded and was metered — say so, or the
-    // user reads a bare fs error as a failed (unbilled) call.
-    throw new Error(
-      `The call succeeded and was charged ${meter.costUsd}, but writing "${out}" failed — ${(err as Error).message}`,
+    // The gateway call already succeeded and was metered — say so before the
+    // fs error surfaces, or the user reads it as a failed (unbilled) call.
+    // Rethrow the ORIGINAL error: its code/path/syscall diagnostics matter.
+    process.stderr.write(
+      `${warn(`The call succeeded and was charged ${meter.costUsd} — only writing "${sanitizeText(out)}" failed.`)}\n`,
     );
+    throw err;
   }
 
   if (flags.json) {

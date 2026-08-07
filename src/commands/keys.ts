@@ -45,8 +45,9 @@ export async function keysListCommand(flags: KeysFlags): Promise<void> {
   if (flags.json) return printJson({ agentId: agent.id, keys });
 
   if (keys.length === 0) {
+    const name = sanitizeText(agent.name ?? agent.id);
     process.stdout.write(
-      `No keys for agent "${sanitizeText(agent.name ?? agent.id)}". Run ${bold('floe init --new-key')}.\n`,
+      `No keys for agent "${name}". Mint one: ${bold(`floe keys create --agent ${name}`)}\n`,
     );
     return;
   }

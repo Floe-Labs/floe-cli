@@ -168,31 +168,6 @@ describe('floe chat', () => {
     expect(stdout).not.toContain('after done');
   });
 
-  it('--stream reassembles a data: frame split across reads and ignores content after [DONE]', async () => {
-    const enc = new TextEncoder();
-    const chunks = [
-      'data: {"choices":[{"delta":{"content":"He',
-      'llo"}}]}\n\ndata: [DONE]\n\n',
-      'data: {"choices":[{"delta":{"content":"after done"}}]}\n\n',
-    ];
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        for (const c of chunks) controller.enqueue(enc.encode(c));
-        controller.close();
-      },
-    });
-    const fetchMock = vi.fn(async (_url: string | URL, _init?: FetchInit) =>
-      new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await main(['chat', 'hi', '--model', 'openai/gpt-4o-mini', '--stream']);
-
-    expect(process.exitCode ?? 0).toBe(0);
-    expect(stdout).toContain('Hello');
-    expect(stdout).not.toContain('after done');
-  });
-
   it('reads the prompt from stdin when the positional is "-"', async () => {
     const fetchMock = gatewayMock();
     vi.stubGlobal('fetch', fetchMock);
