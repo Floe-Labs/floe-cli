@@ -90,7 +90,10 @@ export async function budgetSetCommand(amount: string, flags: BudgetFlags): Prom
 
   if (per === 'day') {
     if (!agent.keyId) {
-      throw new UsageError('No agent key on record for a per-day key budget. Run `floe init` first.');
+      throw new UsageError(
+        `No key on record for agent "${agent.name ?? agent.id}" on this machine. ` +
+          'Per-day budgets act on a specific key — list keys with `floe keys --agent <ref> --json`.',
+      );
     }
     const result = await api.dev<{ budget: KeyBudgetView }>(
       'PUT',

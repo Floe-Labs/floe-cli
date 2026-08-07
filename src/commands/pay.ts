@@ -168,6 +168,13 @@ export async function payCommand(url: string, flags: PayFlags): Promise<void> {
   // command); the raw key is then re-resolved for the manual fetch below.
   const { apiUrl, config } = await agentContext(flags);
   const agentKey = await resolveAgentKey(apiUrl, config.activeAgentId, config);
+  if (!agentKey) {
+    throw new ApiError(
+      'No agent key found. Run `floe init` first (or set FLOE_AGENT_KEY).',
+      401,
+      'missing_credential',
+    );
+  }
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${agentKey}`,

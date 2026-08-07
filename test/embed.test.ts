@@ -77,7 +77,7 @@ describe('floe embed', () => {
       input: 'hello world',
     });
     expect(stdout).toContain('openai/text-embedding-3-small');
-    expect(stdout).toContain('5'); // dimensions
+    expect(stdout).toMatch(/dimensions\s+5/);
     expect(stdout).toContain('$0.000045');
     expect(stdout).toContain('…'); // vector elided in human mode
     expect(stdout).not.toContain('0.500000'); // 5th value never shown

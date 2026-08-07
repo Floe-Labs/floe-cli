@@ -125,6 +125,7 @@ describe('floe models', () => {
     expect(process.exitCode ?? 0).toBe(0);
     const [, init] = fetchMock.mock.calls[0]!;
     expect(init?.headers?.Authorization).toBe('Bearer floe_test');
+    expect(stdout).toContain('openai/gpt-4o-mini');
   });
 
   it('--json emits the machine-readable list', async () => {

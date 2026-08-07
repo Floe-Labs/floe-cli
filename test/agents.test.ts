@@ -274,6 +274,16 @@ describe('agents create', () => {
     });
   });
 
+  it('rejects an invalid agent name before any network call', async () => {
+    await withConfig(async () => {
+      const calls = stubFetch({});
+      await main(['agents', 'create', 'bad/name']);
+      expect(process.exitCode).toBe(2);
+      expect(stderr).toContain('1–64 characters');
+      expect(calls).toHaveLength(0);
+    });
+  });
+
   it('remaps limit_exceeded to a friendly agent-cap error', async () => {
     await withConfig(async () => {
       stubFetch({

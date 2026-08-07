@@ -79,7 +79,7 @@ export async function estimateCommand(flags: EstimateFlags): Promise<void> {
 
   if (flags.json) return printJson(est);
 
-  const usage = Object.entries(est.usage)
+  const usage = Object.entries(est.usage ?? {})
     .map(([unit, qty]) => `${sanitizeText(unit)}×${qty}`)
     .join(' · ');
   process.stdout.write(`${bold(`Estimate — ${sanitizeText(est.model)}`)}\n`);

@@ -61,7 +61,8 @@ async function targetAgent(
 ): Promise<{ id: string } & AgentEntry> {
   if (!ref) return requireActiveAgent(ctx.config);
   const agent = await resolveAgentRef(ctx, ref);
-  return { ...ctx.config.agents?.[agent.id], id: String(agent.id), name: agent.name };
+  const id = String(agent.id);
+  return { ...ctx.config.agents?.[id], id, name: agent.name };
 }
 
 /** Server clamps to 1..500 silently — fail loudly client-side instead. */

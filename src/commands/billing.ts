@@ -86,6 +86,10 @@ export async function billingMtdCommand(flags: BillingFlags): Promise<void> {
 }
 
 export async function billingInvoiceCommand(flags: BillingFlags): Promise<void> {
+  // `--out -` is an export-only sentinel; --json already streams the invoice.
+  if (flags.out === '-') {
+    throw new UsageError('billing invoice does not support --out - — use --json to print to stdout.');
+  }
   const { api } = await devContext(flags);
   const invoice = await api.dev<InvoiceResponse>('GET', '/v1/developer/billing/invoice');
 

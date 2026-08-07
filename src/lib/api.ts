@@ -126,8 +126,9 @@ export class FloeApi {
       if (res.status === 429 && attempt < retries.length) {
         const retryAfter = Number.parseFloat(res.headers.get('Retry-After') ?? '');
         const delayMs = Number.isFinite(retryAfter)
-          ? Math.min(retryAfter * 1_000, 10_000)
+          ? Math.min(Math.max(retryAfter * 1_000, retries[attempt]!), 10_000)
           : retries[attempt]!;
+        await res.body?.cancel().catch(() => {});
         await sleep(delayMs);
         continue;
       }

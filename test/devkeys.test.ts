@@ -187,7 +187,7 @@ describe('devkeys revoke', () => {
 
     await main(['devkeys', 'revoke', '3', '--yes', '--json']);
 
-    expect(JSON.parse(stdout)).toEqual({ revoked: true, keyId: '3' });
+    expect(JSON.parse(stdout)).toEqual({ revoked: true, keyId: 3 });
     expect(stderr).toContain('floe init');
   });
 

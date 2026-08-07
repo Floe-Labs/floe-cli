@@ -74,7 +74,11 @@ export function readConfig(): CliConfig {
     return {};
   }
   try {
-    return migrate(JSON.parse(raw) as LegacyConfig);
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error('not an object');
+    }
+    return migrate(parsed as LegacyConfig);
   } catch {
     // A corrupt config silently read as {} would be overwritten (losing every
     // agent entry) by the next command that writes — fail loudly instead.

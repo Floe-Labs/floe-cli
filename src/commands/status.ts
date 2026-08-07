@@ -54,7 +54,7 @@ export async function statusCommand(flags: StatusFlags): Promise<void> {
     ]);
   }
   const activeKey = configured?.keyId
-    ? keys.find((k) => k.id === configured.keyId)
+    ? keys.find((k) => String(k.id) === String(configured.keyId))
     : keys[0];
 
   if (flags.json) {

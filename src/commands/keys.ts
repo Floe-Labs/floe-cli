@@ -45,17 +45,22 @@ export async function keysListCommand(flags: KeysFlags): Promise<void> {
   if (flags.json) return printJson({ agentId: agent.id, keys });
 
   if (keys.length === 0) {
-    process.stdout.write(`No keys for agent "${agent.name}". Run ${bold('floe init --new-key')}.\n`);
+    process.stdout.write(
+      `No keys for agent "${sanitizeText(agent.name ?? agent.id)}". Run ${bold('floe init --new-key')}.\n`,
+    );
     return;
   }
-  process.stdout.write(`${bold(`Agent keys — ${agent.name ?? agent.id}`)}\n`);
+  process.stdout.write(`${bold(`Agent keys — ${sanitizeText(agent.name ?? agent.id)}`)}\n`);
   const rows: Array<[string, string]> = keys.map((k) => {
-    const marker = k.id === agent.keyId ? green('● ') : '  ';
+    const marker = agent.keyId !== undefined && String(k.id) === String(agent.keyId) ? green('● ') : '  ';
     const budget = k.budget
       ? `${rawToUsd(k.budget.remainingRaw)} / ${rawToUsd(k.budget.limitRaw)} left`
       : dim('no budget');
     const used = k.lastUsedAt ? `last used ${k.lastUsedAt.slice(0, 10)}` : 'never used';
-    return [`${marker}${k.keyPrefix}`, `${k.label ?? dim('(no label)')} · ${k.permissions} · ${budget} · ${dim(used)}`];
+    return [
+      `${marker}${sanitizeText(k.keyPrefix)}`,
+      `${k.label ? sanitizeText(k.label) : dim('(no label)')} · ${sanitizeText(k.permissions)} · ${budget} · ${dim(used)}`,
+    ];
   });
   process.stdout.write(`${kv(rows)}\n`);
   if (agent.keyId) process.stdout.write(`${dim('● = the key this machine uses')}\n`);

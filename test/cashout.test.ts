@@ -188,6 +188,19 @@ describe('cashout start', () => {
     expect(stdout).toContain(PAY_URL);
     expect(stdout).toContain('bank details');
   });
+
+  it('maps withdrawal_exceeds_user_balance to the spend-only hint', async () => {
+    stubApi({
+      'POST /v1/offramp/start': () => ({
+        status: 400,
+        json: { error: 'withdrawal_exceeds_user_balance', message: 'Requested amount exceeds withdrawable balance' },
+      }),
+    });
+    await main(['cashout', 'start', '--amount', '10', '--yes']);
+    expect(process.exitCode).toBe(1);
+    expect(stderr).toContain('exceeds withdrawable balance');
+    expect(stderr).toContain('spend-only');
+  });
 });
 
 describe('cashout list', () => {

@@ -89,14 +89,14 @@ export async function teamMembersCommand(flags: TeamFlags): Promise<void> {
     `${table(
       ['WALLET', 'ROLE', 'NAME', 'JOINED'],
       result.members.map((m) => [
-        m.isSelf ? `${green('●')} ${m.memberWallet}` : `  ${m.memberWallet}`,
+        m.isSelf ? `${green('●')} ${sanitizeText(m.memberWallet)}` : `  ${sanitizeText(m.memberWallet)}`,
         m.role,
         m.displayName ? sanitizeText(m.displayName) : dim('—'),
         m.createdAt ? m.createdAt.slice(0, 10) : dim('—'),
       ]),
     )}\n`,
   );
-  process.stdout.write(`${dim(`● = you${result.role ? ` (role: ${result.role})` : ''}`)}\n`);
+  process.stdout.write(`${dim(`● = you${result.role ? ` (role: ${sanitizeText(result.role)})` : ''}`)}\n`);
 }
 
 export async function teamInviteCommand(email: string, flags: TeamFlags): Promise<void> {
@@ -162,7 +162,7 @@ export async function teamSetRoleCommand(
   }
 
   if (flags.json) return printJson(result);
-  process.stdout.write(`${ok(`${wallet} is now ${bold(result.role)}`)}\n`);
+  process.stdout.write(`${ok(`${wallet} is now ${bold(sanitizeText(result.role))}`)}\n`);
 }
 
 export async function teamRemoveCommand(walletArg: string, flags: TeamFlags): Promise<void> {

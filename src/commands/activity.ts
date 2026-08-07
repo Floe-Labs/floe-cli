@@ -114,7 +114,7 @@ function buildQuery(flags: ActivityFlags): URLSearchParams {
 function renderExpanded(events: ActivityEvent[]): void {
   for (const event of events) {
     const rows: Array<[string, string]> = [
-      ['time', event.timestamp.replace('T', ' ')],
+      ['time', sanitizeText(event.timestamp).replace('T', ' ')],
       ['agent', sanitizeText(event.agent?.name ?? '')],
       ['type', sanitizeText(event.type)],
       ['status', sanitizeText(event.status)],
@@ -178,7 +178,7 @@ export async function activityCommand(flags: ActivityFlags): Promise<void> {
     renderExpanded(feed.events);
   } else {
     const rows = feed.events.map((event) => [
-      event.timestamp.slice(0, 16).replace('T', ' '),
+      sanitizeText(event.timestamp).slice(0, 16).replace('T', ' '),
       sanitizeText(event.agent?.name ?? ''),
       sanitizeText(event.type),
       sanitizeText(event.status),

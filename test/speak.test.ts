@@ -137,4 +137,54 @@ describe('floe speak', () => {
     expect(stderr).toContain('Budget exhausted');
     expect(existsSync(out)).toBe(false);
   });
+
+  it('refuses --out - when stdout is a TTY, before any network call', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const wasTTY = process.stdout.isTTY;
+    process.stdout.isTTY = true;
+    try {
+      await main(['speak', 'hi', '--out', '-']);
+    } finally {
+      process.stdout.isTTY = wasTTY;
+    }
+
+    expect(process.exitCode).toBe(2);
+    expect(stderr).toContain('Refusing to write binary audio');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects --out - combined with --json, before any network call', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const wasTTY = process.stdout.isTTY;
+    process.stdout.isTTY = false;
+    try {
+      await main(['speak', 'hi', '--out', '-', '--json']);
+    } finally {
+      process.stdout.isTTY = wasTTY;
+    }
+
+    expect(process.exitCode).toBe(2);
+    expect(stderr).toContain('--json');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('--out - streams the raw audio to stdout and reports bytes plus cost on stderr', async () => {
+    const fetchMock = gatewayMock();
+    vi.stubGlobal('fetch', fetchMock);
+    const wasTTY = process.stdout.isTTY;
+    process.stdout.isTTY = false;
+    try {
+      await main(['speak', 'hi', '--out', '-', '--model', 'openai/tts-1']);
+    } finally {
+      process.stdout.isTTY = wasTTY;
+    }
+
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(stdout).toBe('RIFF');
+    expect(stderr).toContain('8 bytes');
+    expect(stderr).toContain('$0.00025');
+  });
 });

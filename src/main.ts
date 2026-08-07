@@ -124,7 +124,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
       process.exitCode = err.exitCode;
       return;
     }
-    process.stderr.write(`${errRed('error:')} ${sanitizeText((err as Error).message)}\n`);
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`${errRed('error:')} ${sanitizeText(message)}\n`);
     process.exitCode = 1;
   }
 }

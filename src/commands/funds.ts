@@ -109,12 +109,22 @@ const DIRECTION_LABEL: Record<string, string> = {
   embedded_to_external: 'Main Wallet → external',
 };
 
-// Same pattern as init.ts (deliberately copied, not imported — command files
-// only depend on lib/).
+// Duplicated in cashout.ts (deliberately — command files only depend on lib/).
+// Unlike init.ts's copy the URL here is network-sourced, so only https: opens
+// and no shell is involved: cmd.exe would parse & | ^ in the URL as command
+// separators and expand %VAR%.
 function openInBrowser(url: string): void {
-  const cmd =
-    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
-  const child = spawn(cmd, [url], { stdio: 'ignore', detached: true, shell: process.platform === 'win32' });
+  let protocol: string | undefined;
+  try {
+    protocol = new URL(url).protocol;
+  } catch {
+    // Unparseable — fall through to the guard.
+  }
+  if (protocol !== 'https:') return; // The link is already printed as text.
+  const isWin = process.platform === 'win32';
+  const cmd = process.platform === 'darwin' ? 'open' : isWin ? 'rundll32' : 'xdg-open';
+  const args = isWin ? ['url.dll,FileProtocolHandler', url] : [url];
+  const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
   child.on('error', () => {
     // Best-effort — headless boxes without a browser opener just get the URL in text.
   });
@@ -181,11 +191,19 @@ async function prepareAndExecute(
   } catch (err) {
     remapTransferError(err);
   }
-  const executed = await api.dev<ExecuteTransferResponse>(
-    'POST',
-    `/v1/transfers/${encodeURIComponent(prepared.transferId)}/execute`,
-  );
-  return { prepared, executed };
+  try {
+    const executed = await api.dev<ExecuteTransferResponse>(
+      'POST',
+      `/v1/transfers/${encodeURIComponent(prepared.transferId)}/execute`,
+    );
+    return { prepared, executed };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      throw new ApiError(err.message, err.status, err.code,
+        `Transfer ${prepared.transferId} was prepared. Check it with \`floe funds list\` before retrying — retrying can move the funds twice.`);
+    }
+    throw err;
+  }
 }
 
 // ─── withdraw ──────────────────────────────────────────────────────────

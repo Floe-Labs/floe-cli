@@ -1,4 +1,4 @@
-import { UsageError } from './output.js';
+import { sanitizeText, UsageError } from './output.js';
 import { ask, isInteractive } from './prompt.js';
 
 /**
@@ -12,11 +12,13 @@ export async function confirmAction(
   opts: { yes?: boolean },
 ): Promise<void> {
   if (opts.yes) return;
+  const safeSummary = sanitizeText(summary);
+  const safeExpected = sanitizeText(expected);
   if (!isInteractive()) {
-    throw new UsageError(`Refusing to ${summary} without confirmation — re-run with --yes.`);
+    throw new UsageError(`Refusing to ${safeSummary} without confirmation — re-run with --yes.`);
   }
-  const answer = await ask(`About to ${summary}.\nType "${expected}" to confirm: `);
-  if (answer !== expected) {
+  const answer = await ask(`About to ${safeSummary}.\nType "${safeExpected}" to confirm: `);
+  if (answer !== safeExpected) {
     throw new UsageError('Confirmation did not match — aborted.');
   }
 }

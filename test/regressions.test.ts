@@ -173,6 +173,11 @@ describe('use — migrated 0.1 legacy keychain slot (review finding 2)', () => {
     // Exactly one request (the fleet read) — no POST .../keys mint.
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(stdout).toContain('Stored key reused');
+    // Migrated key metadata must survive the config rewrite `use` performs.
+    const config = readConfigFile();
+    const entry = (config.agents as Record<string, { keyId?: unknown; keyPrefix?: unknown }>)['7'];
+    expect(entry?.keyId).toBe(17);
+    expect(entry?.keyPrefix).toBe('floe_ab12');
   });
 });
 

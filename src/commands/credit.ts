@@ -171,7 +171,7 @@ export async function creditOpenCommand(flags: CreditFlags): Promise<void> {
   } catch (err) {
     if (err instanceof ApiError && err.code === 'existing_active_credit_line') {
       throw new ApiError(
-        `Agent "${agent.name}" already has a credit line in flight or active — check \`floe credit bounds\`.`,
+        `Agent "${sanitizeText(agent.name)}" already has a credit line in flight or active — check \`floe credit bounds\`.`,
         409,
         'existing_active_credit_line',
       );

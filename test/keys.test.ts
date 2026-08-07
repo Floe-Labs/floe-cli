@@ -4,14 +4,14 @@ import { main } from '../src/main.js';
 
 // keys rotate writes the replacement key via setSecret — keep secrets in
 // memory so tests never touch the OS keychain or the credentials file.
+const secretStore = new Map<string, string>();
 vi.mock('../src/lib/keychain.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/lib/keychain.js')>();
-  const store = new Map<string, string>();
   return {
     ...actual,
-    getSecret: async (account: string) => store.get(account),
+    getSecret: async (account: string) => secretStore.get(account),
     setSecret: async (account: string, value: string) => {
-      store.set(account, value);
+      secretStore.set(account, value);
     },
   };
 });
@@ -64,6 +64,7 @@ const MINTED = {
 beforeEach(() => {
   stdout = '';
   stderr = '';
+  secretStore.clear();
   process.exitCode = undefined;
   vi.spyOn(process.stdout, 'write').mockImplementation((s) => ((stdout += String(s)), true));
   vi.spyOn(process.stderr, 'write').mockImplementation((s) => ((stderr += String(s)), true));

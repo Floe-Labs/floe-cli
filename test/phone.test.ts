@@ -110,11 +110,14 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  rmSync(configDir, { recursive: true, force: true });
-  vi.restoreAllMocks();
-  vi.unstubAllEnvs();
-  vi.unstubAllGlobals();
-  process.exitCode = undefined;
+  try {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    process.exitCode = undefined;
+  } finally {
+    rmSync(configDir, { recursive: true, force: true });
+  }
 });
 
 describe('phone search', () => {

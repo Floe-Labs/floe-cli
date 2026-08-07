@@ -110,7 +110,7 @@ export async function usageSeriesCommand(flags: UsageFlags): Promise<void> {
   const scope = agentLabel ? `agent ${sanitizeText(agentLabel)}` : 'all agents';
   process.stdout.write(`${bold(`Spend — last ${spend.days} days · ${scope}`)}\n`);
   process.stdout.write(
-    `${table(['DATE', 'SPEND'], spend.series.map((p) => [p.date, rawToUsd(p.totalRaw)]))}\n`,
+    `${table(['DATE', 'SPEND'], spend.series.map((p) => [sanitizeText(p.date), rawToUsd(p.totalRaw)]))}\n`,
   );
   process.stdout.write(
     `${kv([
@@ -212,7 +212,7 @@ export async function usageCoverageCommand(flags: UsageFlags): Promise<void> {
     ],
   ];
   process.stdout.write(
-    `${bold(`Governance coverage — ${sanitizeText(agent.name)} · last ${coverage.days} days`)}\n${kv(rows)}\n`,
+    `${bold(`Governance coverage — ${sanitizeText(agent.name ?? String(agent.id))} · last ${coverage.days} days`)}\n${kv(rows)}\n`,
   );
   if (coverage.bySource.length > 0) {
     process.stdout.write(
@@ -269,12 +269,21 @@ Usage analytics for the account:
     };
     if (subcommand === 'summary') {
       expectArgs(ctx, 1);
+      if (flags.days !== undefined) {
+        throw new UsageError('--days does not apply to `floe usage summary`. Use --window 7d|30d.');
+      }
       await usageSummaryCommand(flags);
     } else if (subcommand === 'coverage') {
       expectArgs(ctx, 1);
+      if (flags.window !== undefined) {
+        throw new UsageError('--window does not apply to `floe usage coverage`. Use --days <n>.');
+      }
       await usageCoverageCommand(flags);
     } else if (subcommand === undefined) {
       expectArgs(ctx, 0);
+      if (flags.window !== undefined) {
+        throw new UsageError('--window applies to `floe usage summary` only. Use --days <n>.');
+      }
       await usageSeriesCommand(flags);
     } else {
       throw new UsageError(

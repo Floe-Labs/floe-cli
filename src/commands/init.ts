@@ -124,7 +124,7 @@ async function pickAgent(
     expirySeconds: DEFAULT_EXPIRY_SECONDS,
   });
   const refreshed = await api.dev<{ agents: SerializedAgent[] }>('GET', '/v1/developer/agents');
-  const agent = refreshed.agents.find((a) => a.id === created.agentId);
+  const agent = refreshed.agents.find((a) => String(a.id) === String(created.agentId));
   if (!agent) throw new ApiError('Agent was created but could not be read back.', 500);
   return { agent, welcomeCreditTxHash: created.welcomeCreditTxHash };
 }

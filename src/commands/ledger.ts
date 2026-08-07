@@ -73,7 +73,7 @@ export async function ledgerCommand(flags: LedgerFlags): Promise<void> {
   if (flags.json) return printJson(ledger);
 
   const scope = agentLabel ? ` · agent ${sanitizeText(agentLabel)}` : '';
-  process.stdout.write(`${bold(`Ledger — by ${ledger.groupBy} · last ${ledger.days} days${scope}`)}\n`);
+  process.stdout.write(`${bold(`Ledger — by ${sanitizeText(ledger.groupBy)} · last ${ledger.days} days${scope}`)}\n`);
   if (ledger.rows.length === 0) {
     process.stdout.write('No spend in this window.\n');
     return;

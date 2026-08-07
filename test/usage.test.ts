@@ -99,6 +99,7 @@ beforeEach(() => {
   mkdirSync(`${DIR}/floe`, { recursive: true });
   writeFileSync(`${DIR}/floe/config.json`, JSON.stringify(CONFIG));
   vi.stubEnv('XDG_CONFIG_HOME', DIR);
+  vi.stubEnv('FLOE_API_URL', '');
   vi.stubEnv('FLOE_API_KEY', 'floe_live_test');
 });
 

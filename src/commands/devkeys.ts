@@ -116,7 +116,7 @@ export async function devkeysRevokeCommand(keyId: string, flags: DevkeysFlags): 
   await confirmAction(`revoke developer key ${keyId}`, keyId, { yes: flags.yes });
   await ctx.api.dev<{ message?: string }>('DELETE', `/v1/developer/keys/${keyId}`);
 
-  if (flags.json) return printJson({ revoked: true, keyId });
+  if (flags.json) return printJson({ revoked: true, keyId: Number(keyId) });
   process.stdout.write(`${ok(`Developer key ${keyId} revoked.`)}\n`);
 }
 

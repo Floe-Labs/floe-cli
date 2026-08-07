@@ -42,7 +42,7 @@ export function meterRows(model: string, meter: MeterInfo): Array<[string, strin
     ['model', cyan(sanitizeText(model))],
     ['cost', bold(meter.costUsd)],
   ];
-  if (meter.budgetRemainingUsd) rows.push(['budget left', `$${meter.budgetRemainingUsd}`]);
+  if (meter.budgetRemainingUsd) rows.push(['budget left', `$${sanitizeText(meter.budgetRemainingUsd)}`]);
   return rows;
 }
 

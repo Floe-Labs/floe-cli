@@ -37,7 +37,7 @@ interface VendorsStatusResponse {
 /** "2h ago" style freshness against the server's own clock. */
 function age(now: string, checkedAt: string): string {
   const ms = Date.parse(now) - Date.parse(checkedAt);
-  if (!Number.isFinite(ms) || ms < 0) return checkedAt.slice(0, 10);
+  if (!Number.isFinite(ms) || ms < 0) return sanitizeText(checkedAt.slice(0, 10));
   const mins = Math.floor(ms / 60_000);
   if (mins < 1) return 'just now';
   if (mins < 60) return `${mins}m ago`;

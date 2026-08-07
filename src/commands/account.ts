@@ -35,7 +35,7 @@ export async function accountShowCommand(flags: AccountFlags): Promise<void> {
     ['Name', dev.displayName ? sanitizeText(dev.displayName) : dim('(unnamed)')],
     ['Account ID', dev.accountId ?? dim('—')],
     ['Role', dev.role ? sanitizeText(dev.role) : dim('—')],
-    ['Wallet', dev.walletAddress],
+    ['Wallet', sanitizeText(dev.walletAddress)],
     ['Email', dev.email ? sanitizeText(dev.email) : dim('—')],
     ['Created', dev.createdAt.slice(0, 10)],
     ['Agents', `${profile.agents.length} (${active} active)`],

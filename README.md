@@ -22,7 +22,8 @@ transcription across 15+ vendors — one bill, in USDC.
 ## Quickstart
 
 ```bash
-npx @floelabs/cli init      # authenticate, set up an agent + key
+npm install -g @floelabs/cli
+floe init                   # authenticate, set up an agent + key
 floe status                 # am I set up? balance, budgets, active agent
 floe chat "hello"           # one metered call, cost printed
 floe test --voice           # STT → LLM → TTS: three legs, one key, one bill

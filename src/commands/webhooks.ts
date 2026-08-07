@@ -98,12 +98,13 @@ function requireWebhookId(raw: string | undefined, verb: string): string {
   return raw;
 }
 
-/** The API's bare 404 body is just {error:"Not found"} — name the webhook instead. */
+/** The API's bare 404 body is just {error:"Not found"} — name the webhook instead.
+ *  Retry's delivery-scoped 404 ({error:"Delivery not found"}) passes through untouched. */
 async function withWebhook<T>(id: string, call: Promise<T>): Promise<T> {
   try {
     return await call;
   } catch (err) {
-    if (err instanceof ApiError && err.status === 404) {
+    if (err instanceof ApiError && err.status === 404 && err.code !== 'Delivery not found') {
       throw new ApiError(`Webhook ${id} not found.`, 404, err.code, 'List webhooks with `floe webhooks list`.');
     }
     throw err;
@@ -197,10 +198,14 @@ export async function webhooksListCommand(flags: WebhooksFlags): Promise<void> {
 }
 
 export async function webhooksCreateCommand(url: string, flags: WebhooksFlags): Promise<void> {
+  let parsed: URL;
   try {
-    new URL(url);
+    parsed = new URL(url);
   } catch {
     throw new UsageError(`Invalid webhook URL "${url}".`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new UsageError(`Webhook URL must use http or https (got "${parsed.protocol}").`);
   }
   const events = parseEvents(flags.events);
   const scope = flags.scope ?? 'global';
@@ -346,9 +351,15 @@ export async function webhooksDeliveriesCommand(id: string, flags: WebhooksFlags
   const { api } = await devContext(flags);
 
   if (flags.retry) {
-    const result = await api.dev<DispatchOutcome>(
-      'POST',
-      `/v1/developer/webhooks/${id}/deliveries/${encodeURIComponent(flags.retry)}/retry`,
+    if (flags.limit !== undefined) {
+      throw new UsageError('--limit does not apply to --retry; pass one or the other.');
+    }
+    const result = await withWebhook(
+      id,
+      api.dev<DispatchOutcome>(
+        'POST',
+        `/v1/developer/webhooks/${id}/deliveries/${encodeURIComponent(flags.retry)}/retry`,
+      ),
     );
     printDispatch('Retry', result, flags.json === true);
     return;

@@ -152,4 +152,31 @@ describe('floe transcribe', () => {
     expect(process.exitCode).toBe(5);
     expect(stderr).toContain('Budget exhausted');
   });
+
+  it('rejects an empty file before any network call', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const file = `${dir}/empty.wav`;
+    writeFileSync(file, Buffer.alloc(0));
+
+    await main(['transcribe', file]);
+
+    expect(process.exitCode).toBe(2);
+    expect(stderr).toContain('nothing to transcribe');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to audio/wav for an unknown extension', async () => {
+    const fetchMock = gatewayMock();
+    vi.stubGlobal('fetch', fetchMock);
+    const file = `${dir}/note.weird`;
+    writeFileSync(file, Buffer.from([1, 2]));
+
+    await main(['transcribe', file, '--model', 'openai/whisper-1']);
+
+    expect(process.exitCode ?? 0).toBe(0);
+    const form = fetchMock.mock.calls[0]![1]?.body as FormData;
+    expect((form.get('file') as File).type).toBe('audio/wav');
+    expect((form.get('file') as File).name).toBe('note.weird');
+  });
 });

@@ -46,7 +46,15 @@ export async function speakCommand(text: string, flags: SpeakFlags): Promise<voi
     process.stderr.write(`${audio.byteLength} bytes · cost ${meter.costUsd}\n`);
     return;
   }
-  writeFileSync(out, audio);
+  try {
+    writeFileSync(out, audio);
+  } catch (err) {
+    // The gateway call already succeeded and was metered — say so, or the
+    // user reads a bare fs error as a failed (unbilled) call.
+    throw new Error(
+      `The call succeeded and was charged ${meter.costUsd}, but writing "${out}" failed — ${(err as Error).message}`,
+    );
+  }
 
   if (flags.json) {
     return printJson({

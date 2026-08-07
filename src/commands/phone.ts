@@ -418,9 +418,12 @@ export async function phoneReleaseCommand(numberId: string, flags: PhoneFlags): 
     return;
   }
 
-  await confirmAction(`release ${e164} — IRREVERSIBLE, the number cannot be recovered`, e164, {
-    yes: flags.yes,
-  });
+  const safeE164 = sanitizeText(e164);
+  await confirmAction(
+    `release ${safeE164} — IRREVERSIBLE, the number cannot be recovered`,
+    safeE164,
+    { yes: flags.yes },
+  );
   const { number } = await ctx.api.dev<{ number: PhoneNumberView }>(
     'DELETE',
     `/v1/developer/agents/${agent.id}/numbers/${numberId}`,
