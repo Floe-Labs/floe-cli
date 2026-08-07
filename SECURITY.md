@@ -12,7 +12,7 @@ If you discover a security vulnerability in any Floe Labs repository, **do not o
 
 | Component | Version | Supported |
 |-----------|---------|-----------|
-| Platform CLI (npm `@floelabs/cli`) | 0.1.x | ✅ |
+| Platform CLI (npm `@floelabs/cli`) | 0.2.x | ✅ |
 | AgentKit (npm `floe-agent`) | 0.6.x | ✅ |
 | AgentKit (PyPI `floe-agentkit-actions`) | 0.5.x | ✅ |
 | MCP Server (`@floelabs/mcp-server`) | 0.3.x | ✅ |

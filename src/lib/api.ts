@@ -58,8 +58,19 @@ async function toApiError(res: Response): Promise<ApiError> {
   } catch {
     // Non-JSON error body — keep the status-line message.
   }
+  if (res.status === 403 && !hint && /read[-_ ]?only|permission/i.test(`${code ?? ''} ${message}`)) {
+    hint = 'This developer key may be read-only — mint a read_write key with `floe devkeys create`.';
+  }
+  if (res.status === 429 && !hint) {
+    const retryAfter = res.headers.get('Retry-After');
+    hint = retryAfter ? `Rate limited — retry in ${retryAfter}s.` : 'Rate limited — retry shortly.';
+  }
   return new ApiError(message, res.status, code, hint);
 }
+
+const RETRY_DELAYS_MS = [1_000, 2_000];
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class FloeApi {
   constructor(
@@ -70,12 +81,12 @@ export class FloeApi {
 
   private async request(
     key: string | undefined,
-    plane: 'developer' | 'agent',
+    plane: 'developer' | 'agent' | 'public',
     method: string,
     path: string,
     { body, timeoutMs = 30_000 }: RequestOptions = {},
   ): Promise<Response> {
-    if (!key) {
+    if (!key && plane !== 'public') {
       throw new ApiError(
         plane === 'developer'
           ? 'No developer key found. Run `floe init` (or set FLOE_API_KEY).'
@@ -85,9 +96,9 @@ export class FloeApi {
       );
     }
     const headers: Record<string, string> = {
-      Authorization: `Bearer ${key}`,
       'User-Agent': `floe-cli/${cliVersion()}`,
     };
+    if (key) headers.Authorization = `Bearer ${key}`;
     let payload: string | FormData | undefined;
     if (body instanceof FormData) {
       payload = body;
@@ -96,20 +107,33 @@ export class FloeApi {
       payload = JSON.stringify(body);
     }
 
-    let res: Response;
-    try {
-      res = await fetch(`${this.baseUrl}${path}`, {
-        method,
-        headers,
-        body: payload,
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (err) {
-      const reason = err instanceof Error && err.name === 'TimeoutError' ? 'timed out' : 'failed';
-      throw new ApiError(`Request to ${this.baseUrl}${path} ${reason}: ${(err as Error).message}`, 0);
+    // Reads retry through transient rate limits; writes never auto-repeat —
+    // a 429 on a state-changing call surfaces immediately with its hint.
+    const retries = method === 'GET' ? RETRY_DELAYS_MS : [];
+    for (let attempt = 0; ; attempt++) {
+      let res: Response;
+      try {
+        res = await fetch(`${this.baseUrl}${path}`, {
+          method,
+          headers,
+          body: payload,
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch (err) {
+        const reason = err instanceof Error && err.name === 'TimeoutError' ? 'timed out' : 'failed';
+        throw new ApiError(`Request to ${this.baseUrl}${path} ${reason}: ${(err as Error).message}`, 0);
+      }
+      if (res.status === 429 && attempt < retries.length) {
+        const retryAfter = Number.parseFloat(res.headers.get('Retry-After') ?? '');
+        const delayMs = Number.isFinite(retryAfter)
+          ? Math.min(retryAfter * 1_000, 10_000)
+          : retries[attempt]!;
+        await sleep(delayMs);
+        continue;
+      }
+      if (!res.ok) throw await toApiError(res);
+      return res;
     }
-    if (!res.ok) throw await toApiError(res);
-    return res;
   }
 
   /** Management plane — floe_live_ developer key. Returns parsed JSON. */
@@ -118,8 +142,22 @@ export class FloeApi {
     return (await res.json()) as T;
   }
 
+  /**
+   * Management plane, raw Response — for non-JSON bodies (CSV export) and
+   * routes whose X-Floe-* headers matter (phone buy cost).
+   */
+  async devRaw(method: string, path: string, body?: unknown): Promise<Response> {
+    return this.request(this.devKey, 'developer', method, path, { body });
+  }
+
   /** Gateway / agent plane — floe_ agent key. Returns the raw Response so callers can read X-Floe-* headers. */
   async agent(method: string, path: string, body?: unknown, timeoutMs = 120_000): Promise<Response> {
     return this.request(this.agentKey, 'agent', method, path, { body, timeoutMs });
+  }
+
+  /** Unauthenticated routes (/v1/capabilities, /v1/health). Returns parsed JSON. */
+  async public<T>(method: string, path: string): Promise<T> {
+    const res = await this.request(undefined, 'public', method, path, {});
+    return (await res.json()) as T;
   }
 }

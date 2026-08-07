@@ -1,6 +1,6 @@
-import { ApiError, FloeApi } from '../lib/api.js';
-import { readConfig, resolveApiUrl } from '../lib/config.js';
-import { resolveAgentKey } from '../lib/keychain.js';
+import { ApiError } from '../lib/api.js';
+import { expectArgs, flag, str, type CommandDef } from '../lib/command.js';
+import { agentContext } from '../lib/context.js';
 import { bold, cyan, dim, kv, ok, printJson, sanitizeText } from '../lib/output.js';
 import type { GatewayModel, ModelsResponse } from '../lib/types.js';
 import { rawToUsd } from '../lib/usdc.js';
@@ -46,13 +46,7 @@ function costOf(res: Response): string {
 }
 
 export async function testCommand(flags: TestFlags): Promise<void> {
-  const config = readConfig();
-  const apiUrl = resolveApiUrl(flags.apiUrl, config);
-  const agentKey = await resolveAgentKey(apiUrl);
-  if (!agentKey) {
-    throw new ApiError('No agent key found. Run `floe init` first (or set FLOE_AGENT_KEY).', 401, 'missing_credential');
-  }
-  const api = new FloeApi(apiUrl, undefined, agentKey);
+  const { api, apiUrl } = await agentContext(flags);
 
   const models = ((await (await api.agent('GET', '/v1/models')).json()) as ModelsResponse).data;
   if (!Array.isArray(models)) {
@@ -143,3 +137,39 @@ export async function testCommand(flags: TestFlags): Promise<void> {
     process.stdout.write(`\n${dim('Three legs, one key, one bill.')}\n`);
   }
 }
+
+export const testDef: CommandDef = {
+  name: 'test',
+  summary: 'Make one real metered call and print its cost',
+  usage: `Usage: floe test [flags]
+
+Make one real metered call through the gateway with this machine's agent key
+and print the per-leg cost from the X-Floe-Cost-USDC response header.
+
+Flags:
+  --voice              Run the STT → LLM → TTS three-leg voice pipeline
+  --model <id>         Chat model override
+  --stt-model <id>     Transcription model override (--voice)
+  --tts-model <id>     Speech model override (--voice)
+  --tts-voice <name>   Speech voice (default "alloy")
+`,
+  options: {
+    voice: { type: 'boolean' },
+    model: { type: 'string' },
+    'stt-model': { type: 'string' },
+    'tts-model': { type: 'string' },
+    'tts-voice': { type: 'string' },
+  },
+  run: async (ctx) => {
+    expectArgs(ctx, 0);
+    await testCommand({
+      apiUrl: ctx.apiUrl,
+      json: ctx.json,
+      voice: flag(ctx, 'voice'),
+      model: str(ctx, 'model'),
+      sttModel: str(ctx, 'stt-model'),
+      ttsModel: str(ctx, 'tts-model'),
+      ttsVoice: str(ctx, 'tts-voice'),
+    });
+  },
+};

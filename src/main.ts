@@ -1,172 +1,130 @@
 import { parseArgs } from 'node:util';
-import { budgetClearCommand, budgetSetCommand, budgetShowCommand } from './commands/budget.js';
-import { initCommand } from './commands/init.js';
-import { keysListCommand, keysRotateCommand } from './commands/keys.js';
-import { statusCommand } from './commands/status.js';
-import { testCommand } from './commands/test.js';
+import { registry, SECTIONS } from './commands/index.js';
 import { ApiError } from './lib/api.js';
-import { bold, cyan, dim, errDim, errRed, UsageError } from './lib/output.js';
+import { GLOBAL_OPTIONS, type CommandContext, type CommandDef, type OptionValue } from './lib/command.js';
+import { bold, cyan, errDim, errRed, sanitizeText, UsageError } from './lib/output.js';
 import { cliVersion } from './lib/version.js';
 
-const HELP = `${bold('floe')} — wire a metered Floe gateway key into your agent
+function renderHelp(): string {
+  const lines: string[] = [
+    `${bold('floe')} — the Floe platform CLI: agents, keys, budgets, and metered calls`,
+    '',
+    bold('USAGE'),
+    '  floe <command> [flags]',
+    '  floe help <command>',
+  ];
+  const width = Math.max(...[...registry.keys()].map((n) => n.length));
+  for (const section of SECTIONS) {
+    lines.push('', bold(section.title));
+    for (const def of section.commands) {
+      lines.push(`  ${cyan(def.name.padEnd(width))}  ${def.summary}`);
+    }
+  }
+  lines.push(
+    '',
+    bold('GLOBAL FLAGS'),
+    '  --json           Machine-readable output',
+    '  --yes            Skip confirmation prompts (destructive/money commands)',
+    '  --api-url <url>  Override the API base (default: https://credit-api.floelabs.xyz)',
+    '  --version        Print the CLI version',
+    '  --help           This help (or per-command usage after a command)',
+    '',
+    bold('ENVIRONMENT'),
+    '  FLOE_API_KEY     Developer key (floe_live_…) — overrides the keychain',
+    '  FLOE_AGENT_KEY   Agent key (floe_…) — overrides the keychain',
+    '  FLOE_API_URL     API base URL',
+    '',
+    bold('EXIT CODES'),
+    '  0 ok · 1 error · 2 usage · 4 auth · 5 payment/budget',
+    '',
+    `Get started:  ${bold('npx @floelabs/cli init')}`,
+    '',
+  );
+  return lines.join('\n');
+}
 
-${bold('USAGE')}
-  floe <command> [flags]
-
-${bold('COMMANDS')}
-  ${cyan('init')}      Authenticate, set up an agent + key, print the base-URL swap
-              ${dim('flags: --key <floe_live_…> --agent <name> --name <name> --new-key --open')}
-  ${cyan('status')}    Am I set up? Balance, budgets, active agent and key
-  ${cyan('test')}      Make one real metered call and print its cost
-              ${dim('flags: --voice (STT → LLM → TTS), --model <id>,')}
-              ${dim('       --stt-model <id> --tts-model <id> --tts-voice <name>')}
-  ${cyan('budget')}    show | set <usd> [--per day|task [--task <id>]] | clear [--per day]
-  ${cyan('keys')}      list | rotate [keyId]
-
-${bold('GLOBAL FLAGS')}
-  --json           Machine-readable output
-  --api-url <url>  Override the API base (default: https://credit-api.floelabs.xyz)
-  --version        Print the CLI version
-  --help           This help
-
-${bold('ENVIRONMENT')}
-  FLOE_API_KEY     Developer key (floe_live_…) — overrides the keychain
-  FLOE_AGENT_KEY   Agent key (floe_…) — overrides the keychain
-  FLOE_API_URL     API base URL
-
-${bold('EXIT CODES')}
-  0 ok · 1 error · 2 usage · 4 auth · 5 payment/budget
-
-Get started:  ${bold('npx @floelabs/cli init')}
-`;
+function commandHint(def: CommandDef): string {
+  return errDim(`Run \`floe help ${def.name}\` for usage.`);
+}
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
-  let parsed;
-  try {
-    parsed = parseArgs({
-      args: argv,
-      allowPositionals: true,
-      options: {
-        key: { type: 'string' },
-        agent: { type: 'string' },
-        name: { type: 'string' },
-        model: { type: 'string' },
-        'stt-model': { type: 'string' },
-        'tts-model': { type: 'string' },
-        'tts-voice': { type: 'string' },
-        per: { type: 'string' },
-        task: { type: 'string' },
-        'api-url': { type: 'string' },
-        'new-key': { type: 'boolean' },
-        open: { type: 'boolean' },
-        voice: { type: 'boolean' },
-        json: { type: 'boolean' },
-        help: { type: 'boolean' },
-        version: { type: 'boolean' },
-      },
-    });
-  } catch (err) {
-    process.stderr.write(`${errRed('error:')} ${(err as Error).message}\n\n${HELP}`);
+  const [name, ...rest] = argv;
+
+  if (!name || name === '--help' || name === '-h' || name === 'help') {
+    if (name === 'help' && rest[0]) {
+      const target = registry.get(rest[0]);
+      if (!target) {
+        process.stderr.write(`${errRed('error:')} unknown command "${rest[0]}"\n\n${renderHelp()}`);
+        process.exitCode = 2;
+        return;
+      }
+      process.stdout.write(target.usage);
+      return;
+    }
+    process.stdout.write(renderHelp());
+    return;
+  }
+  if (name === '--version' || name === '-v') {
+    process.stdout.write(`floe-cli/${cliVersion()}\n`);
+    return;
+  }
+
+  const def = registry.get(name);
+  if (!def) {
+    process.stderr.write(`${errRed('error:')} unknown command "${name}"\n\n${renderHelp()}`);
     process.exitCode = 2;
     return;
   }
 
-  const { values, positionals } = parsed;
-  const [command, subcommand, arg] = positionals;
-  const common = { apiUrl: values['api-url'], json: values.json };
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args: rest,
+      allowPositionals: true,
+      options: { ...GLOBAL_OPTIONS, version: { type: 'boolean' }, ...def.options },
+    });
+  } catch (err) {
+    process.stderr.write(`${errRed('error:')} ${(err as Error).message}\n${commandHint(def)}\n`);
+    process.exitCode = 2;
+    return;
+  }
 
-  // Commands must consume every positional — extra arguments are a typo, and
-  // a typo must never silently reach a state-changing command.
-  const expectArgs = (max: number) => {
-    if (positionals.length > max) {
-      throw new UsageError(`Unexpected argument "${positionals[max]}".`);
-    }
-  };
-
-  if (values.version) {
+  const { positionals } = parsed;
+  const values = parsed.values as Record<string, OptionValue>;
+  if (values.version === true) {
     process.stdout.write(`floe-cli/${cliVersion()}\n`);
     return;
   }
-  if (values.help || !command || command === 'help') {
-    process.stdout.write(HELP);
+  if (values.help === true) {
+    process.stdout.write(def.usage);
     return;
   }
 
+  const ctx: CommandContext = {
+    args: positionals,
+    values,
+    json: values.json === true,
+    yes: values.yes === true,
+    apiUrl: typeof values['api-url'] === 'string' ? values['api-url'] : undefined,
+  };
+
   try {
-    switch (command) {
-      case 'init':
-        expectArgs(1);
-        await initCommand({
-          ...common,
-          key: values.key,
-          agent: values.agent,
-          name: values.name,
-          newKey: values['new-key'],
-          open: values.open,
-        });
-        break;
-      case 'status':
-        expectArgs(1);
-        await statusCommand(common);
-        break;
-      case 'test':
-        expectArgs(1);
-        await testCommand({
-          ...common,
-          voice: values.voice,
-          model: values.model,
-          sttModel: values['stt-model'],
-          ttsModel: values['tts-model'],
-          ttsVoice: values['tts-voice'],
-        });
-        break;
-      case 'budget': {
-        const flags = { ...common, per: values.per, task: values.task };
-        if (subcommand === 'set') {
-          if (!arg) throw new UsageError('Usage: floe budget set <usd> [--per day|task [--task <id>]]');
-          expectArgs(3);
-          await budgetSetCommand(arg, flags);
-        } else if (subcommand === 'clear') {
-          expectArgs(2);
-          await budgetClearCommand(flags);
-        } else if (subcommand === undefined || subcommand === 'show') {
-          expectArgs(2);
-          await budgetShowCommand(flags);
-        } else {
-          throw new UsageError(`Unknown budget subcommand "${subcommand}". Use: show, set <usd>, clear.`);
-        }
-        break;
-      }
-      case 'keys': {
-        if (subcommand === 'rotate') {
-          expectArgs(3);
-          await keysRotateCommand(arg, common);
-        } else if (subcommand === undefined || subcommand === 'list') {
-          expectArgs(2);
-          await keysListCommand(common);
-        } else {
-          throw new UsageError(`Unknown keys subcommand "${subcommand}". Use: list, rotate [keyId].`);
-        }
-        break;
-      }
-      default:
-        process.stderr.write(`${errRed('error:')} unknown command "${command}"\n\n${HELP}`);
-        process.exitCode = 2;
-        return;
-    }
+    await def.run(ctx);
   } catch (err) {
+    // Error text can embed network-sourced strings (API messages, agent
+    // names) — sanitize before it reaches the terminal.
     if (err instanceof UsageError) {
-      process.stderr.write(`${errRed('error:')} ${err.message}\n`);
+      process.stderr.write(`${errRed('error:')} ${sanitizeText(err.message)}\n${commandHint(def)}\n`);
       process.exitCode = 2;
       return;
     }
     if (err instanceof ApiError) {
-      process.stderr.write(`${errRed('error:')} ${err.message}\n`);
-      if (err.hint) process.stderr.write(`${errDim(`hint: ${err.hint}`)}\n`);
+      process.stderr.write(`${errRed('error:')} ${sanitizeText(err.message)}\n`);
+      if (err.hint) process.stderr.write(`${errDim(`hint: ${sanitizeText(err.hint)}`)}\n`);
       process.exitCode = err.exitCode;
       return;
     }
-    process.stderr.write(`${errRed('error:')} ${(err as Error).message}\n`);
+    process.stderr.write(`${errRed('error:')} ${sanitizeText((err as Error).message)}\n`);
     process.exitCode = 1;
   }
 }

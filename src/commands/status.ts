@@ -1,5 +1,6 @@
 import { FloeApi } from '../lib/api.js';
-import { readConfig, resolveApiUrl } from '../lib/config.js';
+import { expectArgs, type CommandDef } from '../lib/command.js';
+import { activeAgent, readConfig, resolveApiUrl } from '../lib/config.js';
 import { resolveAgentKey, resolveDevKey } from '../lib/keychain.js';
 import { bold, dim, green, kv, printJson, red, yellow } from '../lib/output.js';
 import type {
@@ -18,8 +19,9 @@ export interface StatusFlags {
 export async function statusCommand(flags: StatusFlags): Promise<void> {
   const config = readConfig();
   const apiUrl = resolveApiUrl(flags.apiUrl, config);
+  const configured = activeAgent(config);
   const devKey = await resolveDevKey(apiUrl);
-  const agentKey = await resolveAgentKey(apiUrl);
+  const agentKey = await resolveAgentKey(apiUrl, configured?.id, config);
 
   if (!devKey) {
     if (flags.json) {
@@ -39,9 +41,9 @@ export async function statusCommand(flags: StatusFlags): Promise<void> {
   ]);
 
   const agent =
-    profile.agents.find((a) => a.id === config.agentId) ??
+    profile.agents.find((a) => configured && String(a.id) === String(configured.id)) ??
     profile.agents.find((a) => a.status === 'active');
-  const configStale = Boolean(config.agentId && agent && agent.id !== config.agentId);
+  const configStale = Boolean(configured && agent && String(agent.id) !== String(configured.id));
 
   let keys: AgentKeySummary[] = [];
   let spendLimit: SpendLimitResponse | undefined;
@@ -51,8 +53,8 @@ export async function statusCommand(flags: StatusFlags): Promise<void> {
       api.dev<SpendLimitResponse>('GET', `/v1/developer/agents/${agent.id}/spend-limit`),
     ]);
   }
-  const activeKey = config.keyId
-    ? keys.find((k) => k.id === config.keyId)
+  const activeKey = configured?.keyId
+    ? keys.find((k) => k.id === configured.keyId)
     : keys[0];
 
   if (flags.json) {
@@ -77,7 +79,7 @@ export async function statusCommand(flags: StatusFlags): Promise<void> {
   if (agent) {
     const statusText =
       agent.status === 'active' ? green(agent.status) : yellow(`${agent.status}${agent.suspendedReason ? ` (${agent.suspendedReason})` : ''}`);
-    rows.push(['Agent', `${agent.name} ${dim(agent.id)} — ${statusText}`]);
+    rows.push(['Agent', `${agent.name} ${dim(String(agent.id))} — ${statusText}`]);
   } else {
     rows.push(['Agent', yellow('none — run floe init')]);
   }
@@ -106,7 +108,22 @@ export async function statusCommand(flags: StatusFlags): Promise<void> {
   process.stdout.write(`${bold('Floe')} ${green('●')} signed in\n${kv(rows)}\n`);
   if (configStale) {
     process.stdout.write(
-      `${yellow('!')} This machine was set up for a different agent that is no longer available — run ${bold('floe init')} to reconfigure.\n`,
+      `${yellow('!')} This machine was set up for a different agent that is no longer available — run ${bold('floe use <agent>')} or ${bold('floe init')} to reconfigure.\n`,
     );
   }
 }
+
+export const statusDef: CommandDef = {
+  name: 'status',
+  summary: 'Am I set up? Balance, budgets, active agent and key',
+  usage: `Usage: floe status
+
+Show account identity, the active agent and key, balances, and budgets.
+Exits 4 when no developer key is configured.
+`,
+  options: {},
+  run: async (ctx) => {
+    expectArgs(ctx, 0);
+    await statusCommand({ apiUrl: ctx.apiUrl, json: ctx.json });
+  },
+};
