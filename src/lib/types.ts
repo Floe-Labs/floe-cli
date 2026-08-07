@@ -1,7 +1,8 @@
 /** Response shapes for the Floe Credit API routes the CLI touches. */
 
 export interface SerializedAgent {
-  id: string;
+  /** The API serializes agent ids as numbers; config and CLI refs are strings — always compare via String(). */
+  id: string | number;
   mode: 'legacy' | 'managed';
   fundingMode: 'wallet' | 'credit_line';
   name: string;

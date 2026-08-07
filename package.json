@@ -1,7 +1,7 @@
 {
   "name": "@floelabs/cli",
-  "version": "0.1.0",
-  "description": "Floe CLI — wire a metered Floe gateway key into your agent in one command",
+  "version": "0.2.0",
+  "description": "Floe CLI — the full Floe platform from your terminal: agents, keys, budgets, policies, billing, and metered calls",
   "license": "MIT",
   "type": "module",
   "bin": {

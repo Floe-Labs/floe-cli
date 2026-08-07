@@ -1,10 +1,12 @@
 import { spawn } from 'node:child_process';
 import { ApiError, FloeApi } from '../lib/api.js';
-import { DASHBOARD_URL, readConfig, resolveApiUrl, writeConfig } from '../lib/config.js';
+import { expectArgs, flag, str, type CommandDef } from '../lib/command.js';
+import { DASHBOARD_URL, readConfig, resolveApiUrl, withActiveAgent, writeConfig } from '../lib/config.js';
 import {
   agentKeyAccount,
   devKeyAccount,
-  resolveAgentKey,
+  getSecret,
+  legacyAgentKeyAccount,
   resolveDevKey,
   setSecret,
 } from '../lib/keychain.js';
@@ -89,7 +91,7 @@ async function pickAgent(
 
   // A re-run without --agent must never switch this machine to a different
   // agent — the configured one wins as long as it's still active.
-  const configured = active.find((a) => a.id === configuredAgentId);
+  const configured = active.find((a) => String(a.id) === String(configuredAgentId));
   if (configured) return { agent: configured };
 
   if (active.length === 1 && active[0]) return { agent: active[0] };
@@ -101,7 +103,7 @@ async function pickAgent(
       );
     }
     process.stdout.write('Which agent should this machine use?\n');
-    active.forEach((a, i) => process.stdout.write(`  ${i + 1}. ${a.name} ${dim(a.id)}\n`));
+    active.forEach((a, i) => process.stdout.write(`  ${i + 1}. ${a.name} ${dim(String(a.id))}\n`));
     const answer = await ask(`Agent [1-${active.length}] (default 1): `);
     const index = answer === '' ? 0 : Number.parseInt(answer, 10) - 1;
     const chosen = active[index];
@@ -122,7 +124,7 @@ async function pickAgent(
     expirySeconds: DEFAULT_EXPIRY_SECONDS,
   });
   const refreshed = await api.dev<{ agents: SerializedAgent[] }>('GET', '/v1/developer/agents');
-  const agent = refreshed.agents.find((a) => a.id === created.agentId);
+  const agent = refreshed.agents.find((a) => String(a.id) === String(created.agentId));
   if (!agent) throw new ApiError('Agent was created but could not be read back.', 500);
   return { agent, welcomeCreditTxHash: created.welcomeCreditTxHash };
 }
@@ -139,16 +141,25 @@ export async function initCommand(flags: InitFlags): Promise<void> {
   const profile = await api.dev<ProfileResponse>('GET', '/v1/developer/profile');
   if (fresh && !process.env.FLOE_API_KEY) await setSecret(devKeyAccount(apiUrl), devKey);
 
-  const { agent, welcomeCreditTxHash } = await pickAgent(api, profile.agents, flags, config.agentId);
+  const { agent, welcomeCreditTxHash } = await pickAgent(api, profile.agents, flags, config.activeAgentId);
 
-  // Reuse the stored agent key when it belongs to this agent — each agent has
-  // a 5-key cap, so init must be re-runnable without burning a slot.
+  // Reuse the stored agent key when this agent already has one — each agent
+  // has a 5-key cap, so init must be re-runnable without burning a slot.
+  const entry = config.agents?.[agent.id];
   let agentKey: string | undefined;
-  let keyId = config.keyId;
-  let keyPrefix = config.keyPrefix;
+  let keyId = entry?.keyId;
+  let keyPrefix = entry?.keyPrefix;
   let mintedNewKey = false;
-  if (!flags.newKey && config.agentId === agent.id) {
-    agentKey = await resolveAgentKey(apiUrl);
+  if (!flags.newKey) {
+    // Check the STORED slots directly, not resolveAgentKey — FLOE_AGENT_KEY
+    // would mask an empty slot, leave the config keyless, and pair this agent
+    // with whatever key the env var happens to hold.
+    agentKey =
+      (await getSecret(agentKeyAccount(apiUrl, agent.id))) ??
+      (config.legacySlotAgentId !== undefined &&
+      String(config.legacySlotAgentId) === String(agent.id)
+        ? await getSecret(legacyAgentKeyAccount(apiUrl))
+        : undefined);
   }
   if (!agentKey) {
     let minted: MintKeyResponse;
@@ -170,18 +181,27 @@ export async function initCommand(flags: InitFlags): Promise<void> {
     keyId = minted.id;
     keyPrefix = minted.keyPrefix;
     mintedNewKey = true;
-    // Always persist the freshest key — env vars win at read time anyway.
-    await setSecret(agentKeyAccount(apiUrl), agentKey);
+    // Always persist the freshest key — env vars win at read time anyway. The
+    // key is returned only once and has already consumed a server-side slot, so
+    // if local storage fails, surface it before bailing or it's unrecoverable.
+    try {
+      await setSecret(agentKeyAccount(apiUrl, agent.id), agentKey);
+    } catch (err) {
+      process.stderr.write(
+        `${warn('Could not save the new agent key locally — copy it now (shown once):')}\n${bold(agentKey)}\n`,
+      );
+      throw err;
+    }
   }
 
-  writeConfig({
-    apiUrl,
-    agentId: agent.id,
-    agentName: agent.name,
-    agentWalletAddress: agent.agentWalletAddress,
-    keyId,
-    keyPrefix,
-  });
+  writeConfig(
+    withActiveAgent({ ...config, apiUrl }, agent.id, {
+      name: agent.name,
+      wallet: agent.agentWalletAddress,
+      keyId,
+      keyPrefix,
+    }),
+  );
 
   if (flags.json) {
     printJson({
@@ -204,7 +224,7 @@ export async function initCommand(flags: InitFlags): Promise<void> {
   process.stdout.write(`${ok(`Signed in as ${bold(who)}`)}\n`);
   process.stdout.write(
     kv([
-      ['Agent', `${agent.name} ${dim(agent.id)}`],
+      ['Agent', `${agent.name} ${dim(String(agent.id))}`],
       ['Agent key', mintedNewKey ? `${keyPrefix ?? ''} ${dim('(new — stored in your keychain)')}` : `${keyPrefix ?? ''} ${dim('(reused)')}`],
       ['Gateway', `${apiUrl}/v1`],
     ]) + '\n',
@@ -220,3 +240,40 @@ export async function initCommand(flags: InitFlags): Promise<void> {
   }
   process.stdout.write(renderSnippets(apiUrl, agentKey));
 }
+
+export const initDef: CommandDef = {
+  name: 'init',
+  summary: 'Authenticate, set up an agent + key, print the base-URL swap',
+  usage: `Usage: floe init [flags]
+
+Authenticate with your developer key (floe_live_…), create or select an agent,
+mint its runtime key into the OS keychain, and print the base-URL swap snippet.
+Re-runs are safe: the configured agent and stored key are reused.
+
+Flags:
+  --key <floe_live_…>   Developer key (skips the prompt)
+  --agent <name>        Select an existing active agent by name
+  --name <name>         Name for a newly created agent (default "my-agent")
+  --new-key             Mint a fresh agent key instead of reusing the stored one
+  --open                Open the dashboard in your browser
+`,
+  options: {
+    key: { type: 'string' },
+    agent: { type: 'string' },
+    name: { type: 'string' },
+    'new-key': { type: 'boolean' },
+    open: { type: 'boolean' },
+  },
+  run: async (ctx) => {
+    expectArgs(ctx, 0);
+    await initCommand({
+      apiUrl: ctx.apiUrl,
+      json: ctx.json,
+      key: str(ctx, 'key'),
+      agent: str(ctx, 'agent'),
+      name: str(ctx, 'name'),
+      newKey: flag(ctx, 'new-key'),
+      open: flag(ctx, 'open'),
+    });
+  },
+};

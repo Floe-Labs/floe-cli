@@ -91,14 +91,40 @@ export async function setSecret(account: string, value: string): Promise<void> {
 }
 
 export const devKeyAccount = (apiUrl: string) => `dev-key:${new URL(apiUrl).host}`;
-export const agentKeyAccount = (apiUrl: string) => `agent-key:${new URL(apiUrl).host}`;
+
+/**
+ * Agent keys are stored per agent (`agent-key:<host>:<agentId>`) so `floe use`
+ * can switch agents without re-minting — each agent caps at 5 keys, so the
+ * 0.1 one-slot-per-host model burned a slot on every switch. The 0.1 slot
+ * (`agent-key:<host>`) is still readable, but only for the agent that config
+ * migration recorded as its owner — never for any other agent.
+ */
+export const agentKeyAccount = (apiUrl: string, agentId: string | number) =>
+  `agent-key:${new URL(apiUrl).host}:${agentId}`;
+
+export const legacyAgentKeyAccount = (apiUrl: string) => `agent-key:${new URL(apiUrl).host}`;
 
 /** Developer key (floe_live_…) — management plane. */
 export async function resolveDevKey(apiUrl: string): Promise<string | undefined> {
   return process.env.FLOE_API_KEY || (await getSecret(devKeyAccount(apiUrl)));
 }
 
-/** Agent key (floe_…) — gateway / payment plane. */
-export async function resolveAgentKey(apiUrl: string): Promise<string | undefined> {
-  return process.env.FLOE_AGENT_KEY || (await getSecret(agentKeyAccount(apiUrl)));
+export interface AgentKeySlot {
+  legacySlotAgentId?: string;
+}
+
+/** Agent key (floe_…) — gateway / payment plane. Env var wins for every agent. */
+export async function resolveAgentKey(
+  apiUrl: string,
+  agentId: string | number | undefined,
+  slot: AgentKeySlot = {},
+): Promise<string | undefined> {
+  if (process.env.FLOE_AGENT_KEY) return process.env.FLOE_AGENT_KEY;
+  if (agentId === undefined) return undefined;
+  const stored = await getSecret(agentKeyAccount(apiUrl, agentId));
+  if (stored) return stored;
+  if (slot.legacySlotAgentId !== undefined && String(slot.legacySlotAgentId) === String(agentId)) {
+    return getSecret(legacyAgentKeyAccount(apiUrl));
+  }
+  return undefined;
 }
