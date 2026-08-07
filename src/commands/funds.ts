@@ -443,10 +443,17 @@ export async function fundsTopupCommand(flags: FundsFlags): Promise<void> {
   let presetFiat: number | undefined;
   if (presetRaw !== undefined) {
     const raw = Number(presetRaw);
-    if (!Number.isSafeInteger(raw)) {
-      throw new UsageError('--amount is too large to represent safely for the card checkout.');
+    const fiat = raw / 1e6;
+    // Guard overflow AND float round-trip: the USD number the onramp charges
+    // must convert back to the exact micro-USDC we validated. `raw / 1e6` can
+    // lose precision on large amounts (e.g. 9007199254740991 → 9007199254.740992),
+    // which would bill a different amount than requested — reject those too.
+    if (!Number.isSafeInteger(raw) || Math.round(fiat * 1e6) !== raw) {
+      throw new UsageError(
+        '--amount cannot be represented exactly for the card checkout — use a smaller value.',
+      );
     }
-    presetFiat = raw / 1e6;
+    presetFiat = fiat;
   }
 
   const ctx = await devContext(flags);
