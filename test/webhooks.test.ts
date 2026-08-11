@@ -543,6 +543,25 @@ describe('webhooks logs', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it('rejects an unknown --status before any network call', async () => {
+    const spy = stubNoFetch();
+    await main(['webhooks', 'logs', '--status', 'bogus']);
+    expect(stderr).toContain('Unknown --status "bogus"');
+    expect(stderr).toContain('pending, retrying, success, failed');
+    expect(process.exitCode).toBe(2);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('accepts every documented --status value and lands it in the query string', async () => {
+    for (const status of ['pending', 'retrying', 'success', 'failed']) {
+      const { calls } = stubFetch(200, { deliveries: [], nextCursor: null, hasMore: false });
+      await main(['webhooks', 'logs', '--status', status]);
+      expect(calls).toHaveLength(1);
+      expect(new URL(calls[0]!.url).searchParams.get('status')).toBe(status);
+      expect(process.exitCode ?? 0).toBe(0);
+    }
+  });
+
   it('prints the real next cursor when hasMore', async () => {
     stubFetch(200, { deliveries: [LOG_ROW], nextCursor: 'cur_next123', hasMore: true });
     await main(['webhooks', 'logs']);
@@ -580,6 +599,19 @@ describe('webhooks logs', () => {
       nextCursor: 'cur_next123',
       hasMore: true,
     });
+  });
+});
+
+describe('webhooks help', () => {
+  it('lists catalog events in the usage text without a network call', async () => {
+    const spy = stubNoFetch();
+    await main(['help', 'webhooks']);
+    // Spot-check first and last catalog entries — proves the derived list renders.
+    expect(stdout).toContain('loan.health_warning');
+    expect(stdout).toContain('loan.overdue');
+    expect(stdout).toContain('marketplace.vendor.recovered');
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 

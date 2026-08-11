@@ -62,7 +62,19 @@ const ALLOWED_EVENTS = [
   'marketplace.vendor.recovered',
 ] as const;
 
+/** Wrap the catalog into indented help lines, 4 names per line. */
+const EVENT_HELP_LINES = ALLOWED_EVENTS.reduce<string[][]>((lines, name, i) => {
+  if (i % 4 === 0) lines.push([]);
+  lines[lines.length - 1]!.push(name);
+  return lines;
+}, [])
+  .map((group) => `  ${group.join('  ')}`)
+  .join('\n');
+
 const ALLOWED_SCOPES = ['global', 'wallet', 'agent', 'loan'] as const;
+
+/** Mirrors the API's delivery status enum — the logs --status filter values. */
+const DELIVERY_STATUSES = ['pending', 'retrying', 'success', 'failed'] as const;
 
 /** wallet + agent scope values are wallet addresses — validated before I/O. */
 const WALLET_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
@@ -534,7 +546,14 @@ function buildLogsQuery(flags: WebhooksFlags): URLSearchParams {
     }
     query.set('agent', flags.agent);
   }
-  if (flags.status !== undefined) query.set('status', flags.status);
+  if (flags.status !== undefined) {
+    if (!(DELIVERY_STATUSES as readonly string[]).includes(flags.status)) {
+      throw new UsageError(
+        `Unknown --status "${flags.status}". Supported: ${DELIVERY_STATUSES.join(', ')}.`,
+      );
+    }
+    query.set('status', flags.status);
+  }
   for (const [name, raw] of [
     ['from', flags.from],
     ['to', flags.to],
@@ -647,15 +666,7 @@ headers X-Floe-Signature / X-Floe-Timestamp / X-Floe-Delivery-Id).
 
 Events (--events, comma-separated; '*' or '<prefix>.*' wildcards, e.g. call.*,
 also accepted; live list: floe webhooks events):
-  loan.health_warning  loan.expiry_warning  loan.overdue  loan.liquidated
-  loan.repaid  agent.created  agent.suspended  key.created  key.rotated
-  x402.first_settlement  provider_key.created  provider_key.updated
-  provider_key.deleted  credit.warning  credit.at_limit  credit.recovered
-  call.started  call.ended  call.report.ready  call.recording.ready
-  call.analyzed  call.rejected  phone.number.grace  phone.number.released
-  marketplace.job.completed  marketplace.payment.settled
-  marketplace.spend_cap.hit  marketplace.tripwire.triggered
-  marketplace.vendor.degraded  marketplace.vendor.recovered
+${EVENT_HELP_LINES}
 
 Scopes: global (default) · wallet --scope-value 0x… · agent --scope-value 0x…
         loan --scope-value <loanId>
