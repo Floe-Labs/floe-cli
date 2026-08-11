@@ -24,10 +24,15 @@ import { table } from '../lib/table.js';
  * rotate-secret) and must therefore be printed exactly once, never swallowed.
  */
 
-/** Mirrors the API's allowed webhook events — typos fail before I/O. */
+/**
+ * Mirrors the API's webhook event catalog — typos fail before I/O. The server
+ * catalog (`floe webhooks events`) is the source of truth; extend this list
+ * when it grows.
+ */
 const ALLOWED_EVENTS = [
   'loan.health_warning',
   'loan.expiry_warning',
+  'loan.overdue',
   'loan.liquidated',
   'loan.repaid',
   'agent.created',
@@ -38,9 +43,41 @@ const ALLOWED_EVENTS = [
   'provider_key.created',
   'provider_key.updated',
   'provider_key.deleted',
+  'credit.warning',
+  'credit.at_limit',
+  'credit.recovered',
+  'call.started',
+  'call.ended',
+  'call.report.ready',
+  'call.recording.ready',
+  'call.analyzed',
+  'call.rejected',
+  'phone.number.grace',
+  'phone.number.released',
+  'marketplace.job.completed',
+  'marketplace.payment.settled',
+  'marketplace.spend_cap.hit',
+  'marketplace.tripwire.triggered',
+  'marketplace.vendor.degraded',
+  'marketplace.vendor.recovered',
 ] as const;
 
-const ALLOWED_SCOPES = ['global', 'wallet', 'loan'] as const;
+/** Wrap the catalog into indented help lines, 4 names per line. */
+const EVENT_HELP_LINES = ALLOWED_EVENTS.reduce<string[][]>((lines, name, i) => {
+  if (i % 4 === 0) lines.push([]);
+  lines[lines.length - 1]!.push(name);
+  return lines;
+}, [])
+  .map((group) => `  ${group.join('  ')}`)
+  .join('\n');
+
+const ALLOWED_SCOPES = ['global', 'wallet', 'agent', 'loan'] as const;
+
+/** Mirrors the API's delivery status enum — the logs --status filter values. */
+const DELIVERY_STATUSES = ['pending', 'retrying', 'success', 'failed'] as const;
+
+/** wallet + agent scope values are wallet addresses — validated before I/O. */
+const WALLET_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
 
 interface WebhookView {
   id: number;
@@ -70,6 +107,29 @@ interface DeliveryView {
   createdAt: string | null;
 }
 
+/** One row of GET /v1/developer/webhooks/events — the live catalog. */
+interface CatalogEvent {
+  name: string;
+  title: string;
+  description: string;
+  category: string;
+  scope: string;
+}
+
+/** One row of GET /v1/developer/webhook-deliveries — the account-wide log. */
+interface AccountDeliveryView extends DeliveryView {
+  webhookId: number;
+  webhookUrl: string | null;
+  agentWallet: string | null;
+  correlationId: string | null;
+}
+
+interface AccountDeliveriesResponse {
+  deliveries: AccountDeliveryView[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 /** POST …/test and …/retry both return this dispatch outcome. */
 interface DispatchOutcome {
   success: boolean;
@@ -88,6 +148,15 @@ export interface WebhooksFlags {
   description?: string;
   limit?: string;
   retry?: string;
+  // logs filters
+  endpoint?: string;
+  event?: string;
+  agent?: string;
+  status?: string;
+  from?: string;
+  to?: string;
+  id?: string;
+  cursor?: string;
 }
 
 function requireWebhookId(raw: string | undefined, verb: string): string {
@@ -111,6 +180,21 @@ async function withWebhook<T>(id: string, call: Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * Mirrors the API's isSubscribableEvent (routes/developer/shared.ts): an
+ * exact catalog name, '*' (everything), or a '<prefix>.*' wildcard that
+ * covers at least one catalog event.
+ */
+function isSubscribableEvent(value: string): boolean {
+  if (value === '*') return true;
+  if ((ALLOWED_EVENTS as readonly string[]).includes(value)) return true;
+  if (value.endsWith('.*')) {
+    const prefix = value.slice(0, -1); // keep the trailing dot: 'call.'
+    return ALLOWED_EVENTS.some((name) => name.startsWith(prefix));
+  }
+  return false;
+}
+
 function parseEvents(raw: string | undefined): string[] {
   if (!raw) {
     throw new UsageError(
@@ -119,10 +203,11 @@ function parseEvents(raw: string | undefined): string[] {
   }
   const events = [...new Set(raw.split(',').map((e) => e.trim()).filter(Boolean))];
   if (events.length === 0) throw new UsageError('--events must name at least one event.');
-  const unknown = events.filter((e) => !(ALLOWED_EVENTS as readonly string[]).includes(e));
+  const unknown = events.filter((e) => !isSubscribableEvent(e));
   if (unknown.length > 0) {
     throw new UsageError(
-      `Unknown event(s): ${unknown.join(', ')}. Valid events:\n  ${ALLOWED_EVENTS.join('\n  ')}`,
+      `Unknown event(s): ${unknown.join(', ')}. Valid events ('*' and '<prefix>.*' wildcards also accepted):\n  ${ALLOWED_EVENTS.join('\n  ')}\n` +
+        'Live catalog with descriptions: floe webhooks events',
     );
   }
   return events;
@@ -174,6 +259,8 @@ function summarizeEvents(events: string[]): string {
 
 const statusLabel = (active: boolean) => (active ? green('active') : yellow('paused'));
 
+const shortWallet = (w: string): string => (w.length > 12 ? `${w.slice(0, 6)}…${w.slice(-4)}` : w);
+
 export async function webhooksListCommand(flags: WebhooksFlags): Promise<void> {
   const { api } = await devContext(flags);
   const { webhooks } = await api.dev<{ webhooks: WebhookView[] }>('GET', '/v1/developer/webhooks');
@@ -211,13 +298,16 @@ export async function webhooksCreateCommand(url: string, flags: WebhooksFlags): 
   const scope = flags.scope ?? 'global';
   const scopeValue = flags.scopeValue;
   if (!(ALLOWED_SCOPES as readonly string[]).includes(scope)) {
-    throw new UsageError(`Unknown --scope "${scope}". Supported: global, wallet, loan.`);
+    throw new UsageError(`Unknown --scope "${scope}". Supported: global, wallet, agent, loan.`);
   }
   if (scope === 'global' && scopeValue) {
     throw new UsageError('--scope global does not take a --scope-value.');
   }
-  if (scope === 'wallet' && (!scopeValue || !/^0x[a-fA-F0-9]{40}$/.test(scopeValue))) {
+  if (scope === 'wallet' && (!scopeValue || !WALLET_ADDRESS.test(scopeValue))) {
     throw new UsageError('--scope wallet requires --scope-value <0x… Ethereum address>.');
+  }
+  if (scope === 'agent' && (!scopeValue || !WALLET_ADDRESS.test(scopeValue))) {
+    throw new UsageError('--scope agent requires --scope-value <0x… agent wallet address>.');
   }
   if (scope === 'loan' && (!scopeValue || !/^\d+$/.test(scopeValue))) {
     throw new UsageError('--scope loan requires --scope-value <numeric loan id>.');
@@ -259,6 +349,32 @@ export async function webhooksCreateCommand(url: string, flags: WebhooksFlags): 
   printSecretOnce(webhook.secret);
 }
 
+export async function webhooksEventsCommand(flags: WebhooksFlags): Promise<void> {
+  const { api } = await devContext(flags);
+  let catalog: { events: CatalogEvent[] };
+  try {
+    catalog = await api.dev<{ events: CatalogEvent[] }>('GET', '/v1/developer/webhooks/events');
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      throw new ApiError(
+        'This API build predates the webhook event catalog endpoint.',
+        404,
+        err.code,
+        'The Events list in `floe help webhooks` is still valid.',
+      );
+    }
+    throw err;
+  }
+
+  if (flags.json) return printJson({ events: catalog.events });
+
+  const rows = [...catalog.events]
+    .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
+    .map((e) => [sanitizeText(e.category), sanitizeText(e.name), sanitizeText(e.description)]);
+  process.stdout.write(`${table(['CATEGORY', 'EVENT', 'DESCRIPTION'], rows)}\n`);
+  process.stdout.write(`${dim('Subscribe: floe webhooks create <url> --events <e1,e2,…>')}\n`);
+}
+
 export async function webhooksGetCommand(id: string, flags: WebhooksFlags): Promise<void> {
   const { api } = await devContext(flags);
   const { webhook, deliveryStats } = await withWebhook(
@@ -271,7 +387,12 @@ export async function webhooksGetCommand(id: string, flags: WebhooksFlags): Prom
 
   if (flags.json) return printJson({ webhook, deliveryStats });
 
-  const stats = Object.entries(deliveryStats);
+  // `total` is an aggregate, not a delivery status, and zero-count statuses
+  // are noise — the API's dense stats shape would otherwise make the
+  // 'none yet' empty state unreachable.
+  const stats = Object.entries(deliveryStats).filter(
+    ([status, count]) => status !== 'total' && count > 0,
+  );
   const rows: Array<[string, string]> = [
     ['URL', sanitizeText(webhook.url)],
     ['Events', sanitizeText(webhook.events.join(', '))],
@@ -400,17 +521,129 @@ export async function webhooksDeliveriesCommand(id: string, flags: WebhooksFlags
   process.stdout.write(`${dim(`Re-send one: floe webhooks deliveries ${id} --retry <deliveryId>`)}\n`);
 }
 
+/** Validate every logs filter and build the query — before any I/O. */
+function buildLogsQuery(flags: WebhooksFlags): URLSearchParams {
+  const query = new URLSearchParams();
+  if (flags.endpoint !== undefined) {
+    if (!/^\d+$/.test(flags.endpoint)) {
+      throw new UsageError(
+        `--endpoint takes the numeric webhook id (got "${flags.endpoint}") — see \`floe webhooks list\`.`,
+      );
+    }
+    query.set('endpoint', flags.endpoint);
+  }
+  if (flags.event !== undefined) {
+    if (!(ALLOWED_EVENTS as readonly string[]).includes(flags.event)) {
+      throw new UsageError(
+        `Unknown --event "${flags.event}". Live catalog: floe webhooks events`,
+      );
+    }
+    query.set('event', flags.event);
+  }
+  if (flags.agent !== undefined) {
+    if (!WALLET_ADDRESS.test(flags.agent)) {
+      throw new UsageError(`--agent takes an agent wallet address (0x…, got "${flags.agent}").`);
+    }
+    query.set('agent', flags.agent);
+  }
+  if (flags.status !== undefined) {
+    if (!(DELIVERY_STATUSES as readonly string[]).includes(flags.status)) {
+      throw new UsageError(
+        `Unknown --status "${flags.status}". Supported: ${DELIVERY_STATUSES.join(', ')}.`,
+      );
+    }
+    query.set('status', flags.status);
+  }
+  for (const [name, raw] of [
+    ['from', flags.from],
+    ['to', flags.to],
+  ] as const) {
+    if (raw !== undefined) {
+      const parsed = Date.parse(raw);
+      if (Number.isNaN(parsed)) {
+        throw new UsageError(`--${name} must be an ISO 8601 timestamp (got "${raw}").`);
+      }
+      query.set(name, new Date(parsed).toISOString());
+    }
+  }
+  // Opaque server-side matcher: a session/correlation id or a delivery id.
+  if (flags.id !== undefined) query.set('id', flags.id);
+  if (flags.cursor !== undefined) query.set('cursor', flags.cursor);
+  if (flags.limit !== undefined) query.set('limit', String(parseLimit(flags.limit)));
+  return query;
+}
+
+export async function webhooksLogsCommand(flags: WebhooksFlags): Promise<void> {
+  const query = buildLogsQuery(flags); // validation precedes I/O
+  const { api } = await devContext(flags);
+  const qs = query.toString();
+  const feed = await api.dev<AccountDeliveriesResponse>(
+    'GET',
+    `/v1/developer/webhook-deliveries${qs ? `?${qs}` : ''}`,
+  );
+
+  if (flags.json) {
+    return printJson({ deliveries: feed.deliveries, nextCursor: feed.nextCursor, hasMore: feed.hasMore });
+  }
+
+  if (feed.deliveries.length === 0) {
+    process.stdout.write(
+      `No deliveries found. Widen the filters, or send a test event: ${bold('floe webhooks test <id>')}\n`,
+    );
+    return;
+  }
+  const rows = feed.deliveries.map((d) => [
+    d.createdAt ? d.createdAt.slice(0, 16).replace('T', ' ') : '—',
+    d.webhookId !== null && d.webhookId !== undefined
+      ? `#${d.webhookId}`
+      : d.webhookUrl
+        ? sanitizeText(d.webhookUrl)
+        : '—',
+    sanitizeText(d.event),
+    d.correlationId
+      ? sanitizeText(d.correlationId)
+      : d.agentWallet
+        ? shortWallet(sanitizeText(d.agentWallet))
+        : '—',
+    String(d.attempt),
+    d.statusCode !== null && d.statusCode !== undefined ? String(d.statusCode) : '—',
+    d.status === 'success' ? green('success') : red(sanitizeText(d.status)),
+  ]);
+  process.stdout.write(
+    `${table(['AT', 'ENDPOINT', 'EVENT', 'AGENT/SESSION', 'ATTEMPT', 'HTTP', 'STATUS'], rows)}\n`,
+  );
+  // No auto-follow: the caller decides whether to page — unbounded loops break scripts.
+  if (feed.hasMore && feed.nextCursor) {
+    // Repeat the active filters in the hint — a bare --cursor would silently
+    // continue into the UNFILTERED account-wide log.
+    const repeatFlags = [...query.entries()]
+      .filter(([name]) => name !== 'cursor')
+      .map(([name, value]) => `--${name} ${sanitizeText(value)} `)
+      .join('');
+    process.stdout.write(
+      `${dim(`More available — next page: floe webhooks logs ${repeatFlags}--cursor ${sanitizeText(feed.nextCursor)}`)}\n`,
+    );
+  }
+  process.stdout.write(
+    `${dim('Re-send a delivery: floe webhooks deliveries <endpoint> --retry <deliveryId> (ids via --json)')}\n`,
+  );
+}
+
 export const webhooksDef: CommandDef = {
   name: 'webhooks',
-  summary: 'list | create | get | pause | enable | delete | test | rotate-secret | deliveries',
+  summary: 'list | create | events | get | pause | enable | delete | test | rotate-secret | deliveries | logs',
   usage: `Usage: floe webhooks [list]
-       floe webhooks create <url> --events <e1,e2,…> [--scope global|wallet|loan --scope-value <v>] [--description <text>]
+       floe webhooks create <url> --events <e1,e2,…> [--scope global|wallet|agent|loan --scope-value <v>] [--description <text>]
+       floe webhooks events
        floe webhooks get <id>
        floe webhooks pause <id> | enable <id>
        floe webhooks delete <id>
        floe webhooks test <id>
        floe webhooks rotate-secret <id>
        floe webhooks deliveries <id> [--limit <1-100>] [--retry <deliveryId>]
+       floe webhooks logs [--endpoint <id>] [--event <event>] [--agent <0x…>]
+                          [--status <status>] [--from <iso>] [--to <iso>]
+                          [--id <search>] [--limit <1-100>] [--cursor <cursor>]
 
 Signed event deliveries to your endpoint (HMAC-SHA256 over "<timestamp>.<body>",
 headers X-Floe-Signature / X-Floe-Timestamp / X-Floe-Delivery-Id).
@@ -418,6 +651,7 @@ headers X-Floe-Signature / X-Floe-Timestamp / X-Floe-Delivery-Id).
   list                 All webhooks on your developer account (max 10)
   create <url>         Register an endpoint — the whsec_… signing secret is
                        shown exactly once at creation
+  events               The live event catalog (category, name, description)
   get <id>             One webhook + delivery success/failure counts
   pause | enable <id>  Toggle deliveries without losing the endpoint config
   delete <id>          Remove the webhook and stop all deliveries
@@ -426,14 +660,16 @@ headers X-Floe-Signature / X-Floe-Timestamp / X-Floe-Delivery-Id).
                        verifying immediately
   deliveries <id>      Recent delivery attempts; --retry <deliveryId> re-sends
                        one with a fresh signature (exits 1 on failure)
+  logs                 Account-wide delivery log across all webhooks, newest
+                       first; --id matches a session or delivery id; paginate
+                       with --cursor (no auto-follow)
 
-Events (--events, comma-separated):
-  loan.health_warning  loan.expiry_warning  loan.liquidated  loan.repaid
-  agent.created  agent.suspended  key.created  key.rotated
-  x402.first_settlement  provider_key.created  provider_key.updated
-  provider_key.deleted
+Events (--events, comma-separated; '*' or '<prefix>.*' wildcards, e.g. call.*,
+also accepted; live list: floe webhooks events):
+${EVENT_HELP_LINES}
 
-Scopes: global (default) · wallet --scope-value 0x… · loan --scope-value <loanId>
+Scopes: global (default) · wallet --scope-value 0x… · agent --scope-value 0x…
+        loan --scope-value <loanId>
 `,
   options: {
     events: { type: 'string' },
@@ -442,6 +678,14 @@ Scopes: global (default) · wallet --scope-value 0x… · loan --scope-value <lo
     description: { type: 'string' },
     limit: { type: 'string' },
     retry: { type: 'string' },
+    endpoint: { type: 'string' },
+    event: { type: 'string' },
+    agent: { type: 'string' },
+    status: { type: 'string' },
+    from: { type: 'string' },
+    to: { type: 'string' },
+    id: { type: 'string' },
+    cursor: { type: 'string' },
   },
   run: async (ctx) => {
     const [subcommand, arg] = ctx.args;
@@ -455,6 +699,14 @@ Scopes: global (default) · wallet --scope-value 0x… · loan --scope-value <lo
       description: str(ctx, 'description'),
       limit: str(ctx, 'limit'),
       retry: str(ctx, 'retry'),
+      endpoint: str(ctx, 'endpoint'),
+      event: str(ctx, 'event'),
+      agent: str(ctx, 'agent'),
+      status: str(ctx, 'status'),
+      from: str(ctx, 'from'),
+      to: str(ctx, 'to'),
+      id: str(ctx, 'id'),
+      cursor: str(ctx, 'cursor'),
     };
     if (subcommand === undefined || subcommand === 'list') {
       expectArgs(ctx, 1);
@@ -462,11 +714,14 @@ Scopes: global (default) · wallet --scope-value 0x… · loan --scope-value <lo
     } else if (subcommand === 'create') {
       if (!arg) {
         throw new UsageError(
-          'Usage: floe webhooks create <url> --events <e1,e2,…> [--scope global|wallet|loan --scope-value <v>]',
+          'Usage: floe webhooks create <url> --events <e1,e2,…> [--scope global|wallet|agent|loan --scope-value <v>]',
         );
       }
       expectArgs(ctx, 2);
       await webhooksCreateCommand(arg, flags);
+    } else if (subcommand === 'events') {
+      expectArgs(ctx, 1);
+      await webhooksEventsCommand(flags);
     } else if (subcommand === 'get') {
       expectArgs(ctx, 2);
       await webhooksGetCommand(requireWebhookId(arg, 'get'), flags);
@@ -488,9 +743,12 @@ Scopes: global (default) · wallet --scope-value 0x… · loan --scope-value <lo
     } else if (subcommand === 'deliveries') {
       expectArgs(ctx, 2);
       await webhooksDeliveriesCommand(requireWebhookId(arg, 'deliveries'), flags);
+    } else if (subcommand === 'logs') {
+      expectArgs(ctx, 1);
+      await webhooksLogsCommand(flags);
     } else {
       throw new UsageError(
-        `Unknown webhooks subcommand "${subcommand}". Use: list, create, get, pause, enable, delete, test, rotate-secret, deliveries.`,
+        `Unknown webhooks subcommand "${subcommand}". Use: list, create, events, get, pause, enable, delete, test, rotate-secret, deliveries, logs.`,
       );
     }
   },
