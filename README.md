@@ -86,7 +86,7 @@ floe test --voice           # STT → LLM → TTS: three legs, one key, one bill
 
 | Command | What it does |
 |---|---|
-| `floe webhooks` | list \| create \| get \| pause \| enable \| delete \| test \| rotate-secret \| deliveries |
+| `floe webhooks` | list \| create \| events \| get \| pause \| enable \| delete \| test \| rotate-secret \| deliveries \| logs |
 | `floe models` | Model catalog with modalities and pricing |
 | `floe estimate` | Estimate a call cost without spending |
 | `floe providers` | list \| set \| enable \| disable \| remove — BYOK provider keys |
