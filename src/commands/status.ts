@@ -2,7 +2,7 @@ import { FloeApi } from '../lib/api.js';
 import { expectArgs, type CommandDef } from '../lib/command.js';
 import { activeAgent, readConfig, resolveApiUrl } from '../lib/config.js';
 import { resolveAgentKey, resolveDevKey } from '../lib/keychain.js';
-import { bold, dim, green, kv, printJson, red, yellow } from '../lib/output.js';
+import { bold, dim, green, kv, printJson, red, sanitizeText, yellow } from '../lib/output.js';
 import type {
   AgentKeySummary,
   BalancesResponse,
@@ -72,21 +72,26 @@ export async function statusCommand(flags: StatusFlags): Promise<void> {
     return;
   }
 
-  const who = profile.developer.displayName || profile.developer.email || profile.developer.walletAddress;
+  // All of these come from the network — sanitize before they reach the terminal.
+  const who = sanitizeText(
+    profile.developer.displayName || profile.developer.email || profile.developer.walletAddress,
+  );
   const rows: Array<[string, string]> = [
     ['Account', `${who} ${dim(apiUrl)}`],
   ];
   if (agent) {
     const statusText =
-      agent.status === 'active' ? green(agent.status) : yellow(`${agent.status}${agent.suspendedReason ? ` (${agent.suspendedReason})` : ''}`);
-    rows.push(['Agent', `${agent.name} ${dim(String(agent.id))} — ${statusText}`]);
+      agent.status === 'active'
+        ? green(agent.status)
+        : yellow(sanitizeText(`${agent.status}${agent.suspendedReason ? ` (${agent.suspendedReason})` : ''}`));
+    rows.push(['Agent', `${sanitizeText(agent.name)} ${dim(String(agent.id))} — ${statusText}`]);
   } else {
     rows.push(['Agent', yellow('none — run floe init')]);
   }
   rows.push([
     'Agent key',
     agentKey
-      ? `${activeKey?.keyPrefix ?? 'configured'} ${dim('(in keychain)')}`
+      ? `${sanitizeText(activeKey?.keyPrefix ?? 'configured')} ${dim('(in keychain)')}`
       : yellow('missing locally — run floe init'),
   ]);
   rows.push(['Balance', `${rawToUsd(balances.apiCreditsAvailableRaw)} credits · ${rawToUsd(balances.agentWalletsBalanceRaw)} in agent wallets`]);
