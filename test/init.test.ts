@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { main } from '../src/main.js';
+import { jsonResponse, stubRoutes } from './helpers/http.js';
 
 const API = 'https://credit-api.floelabs.xyz';
 const dir = `${process.cwd()}/test/.tmp-init-${process.pid}`;
@@ -10,64 +11,13 @@ const dir = `${process.cwd()}/test/.tmp-init-${process.pid}`;
 // and the real module would reach the actual OS keychain on this machine.
 const h = vi.hoisted(() => ({ secrets: new Map<string, string>() }));
 
-vi.mock('../src/lib/keychain.js', () => {
-  const host = (apiUrl: string) => new URL(apiUrl).host;
-  const devKeyAccount = (apiUrl: string) => `dev-key:${host(apiUrl)}`;
-  const agentKeyAccount = (apiUrl: string, agentId: string | number) =>
-    `agent-key:${host(apiUrl)}:${agentId}`;
-  const legacyAgentKeyAccount = (apiUrl: string) => `agent-key:${host(apiUrl)}`;
-  return {
-    devKeyAccount,
-    agentKeyAccount,
-    legacyAgentKeyAccount,
-    getSecret: async (account: string) => h.secrets.get(account),
-    setSecret: async (account: string, value: string) => {
-      h.secrets.set(account, value);
-    },
-    resolveDevKey: async (apiUrl: string) =>
-      process.env.FLOE_API_KEY || h.secrets.get(devKeyAccount(apiUrl)),
-    resolveAgentKey: async (
-      apiUrl: string,
-      agentId: string | number | undefined,
-      slot: { legacySlotAgentId?: string } = {},
-    ) => {
-      if (process.env.FLOE_AGENT_KEY) return process.env.FLOE_AGENT_KEY;
-      if (agentId === undefined) return undefined;
-      const stored = h.secrets.get(agentKeyAccount(apiUrl, agentId));
-      if (stored) return stored;
-      if (slot.legacySlotAgentId !== undefined && String(slot.legacySlotAgentId) === String(agentId)) {
-        return h.secrets.get(legacyAgentKeyAccount(apiUrl));
-      }
-      return undefined;
-    },
-  };
+vi.mock('../src/lib/keychain.js', async (importOriginal) => {
+  const { keychainMock } = await import('./helpers/keychain-mock.js');
+  return keychainMock(await importOriginal<typeof import('../src/lib/keychain.js')>(), h.secrets);
 });
 
 let stdout: string;
 let stderr: string;
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
-
-/**
- * Route fetches by "METHOD /path". An unrouted request throws inside fetch,
- * which FloeApi wraps into an exit-1 ApiError — caught by each test's
- * exit-code assertion, so always assert the exit code.
- */
-function stubRoutes(routes: Record<string, (init?: RequestInit) => Response>) {
-  const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-    const key = `${init?.method ?? 'GET'} ${new URL(String(url)).pathname}`;
-    const handler = routes[key];
-    if (!handler) throw new Error(`Unexpected request: ${key}`);
-    return handler(init);
-  });
-  vi.stubGlobal('fetch', fetchMock);
-  return fetchMock;
-}
 
 // Ids arrive as JSON numbers — the API serializes them so (see regressions.test.ts).
 const AGENT = {
