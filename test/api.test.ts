@@ -73,6 +73,32 @@ describe('ApiError mapping', () => {
     expect(err.exitCode).toBe(5);
   });
 
+  it('uses the body `detail` sentence as the message when there is no `message`', async () => {
+    vi.stubGlobal('fetch', async () =>
+      jsonResponse(400, {
+        error: 'area_code_required',
+        detail: 'Enter a 3-digit US area code (e.g. 415) to pick a number',
+      }),
+    );
+    const err = (await new FloeApi('https://api.example', 'floe_live_x')
+      .devRaw('POST', '/v1/developer/agents/1/numbers', {})
+      .catch((e: unknown) => e)) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.code).toBe('area_code_required');
+    expect(err.message).toBe('Enter a 3-digit US area code (e.g. 415) to pick a number');
+  });
+
+  it('prefers `message` over `detail` when a body carries both', async () => {
+    vi.stubGlobal('fetch', async () =>
+      jsonResponse(400, { error: 'x_code', message: 'M wins', detail: 'D loses' }),
+    );
+    const err = (await new FloeApi('https://api.example', 'floe_live_x')
+      .devRaw('POST', '/v1/developer/agents/1/numbers', {})
+      .catch((e: unknown) => e)) as ApiError;
+    expect(err.code).toBe('x_code');
+    expect(err.message).toBe('M wins');
+  });
+
   it('maps 401/403 to exit 4 and other statuses to 1', () => {
     expect(new ApiError('x', 401).exitCode).toBe(4);
     expect(new ApiError('x', 403).exitCode).toBe(4);

@@ -205,6 +205,25 @@ describe('phone buy', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it('requires --area-code or --number before any network call', async () => {
+    const spy = stubNoFetch();
+    await main(['phone', 'buy', '--yes']);
+    expect(stderr).toContain('area code is required');
+    expect(stderr).toContain('--area-code');
+    expect(process.exitCode).toBe(2);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the API detail when the server refuses a missing area code', async () => {
+    stubFetch(400, {
+      error: 'area_code_required',
+      detail: 'Enter a 3-digit US area code (e.g. 415) to pick a number, or pass an exact phoneNumber from a search',
+    });
+    await main(['phone', 'buy', '--area-code', '415', '--yes']);
+    expect(stderr).toContain('area code');
+    expect(process.exitCode).toBe(1);
+  });
+
   it('rejects a malformed --number before any network call', async () => {
     const spy = stubNoFetch();
     await main(['phone', 'buy', '--number', '415-555-0100', '--yes']);
