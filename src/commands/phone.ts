@@ -250,6 +250,13 @@ export async function phoneBuyCommand(flags: PhoneFlags): Promise<void> {
   if (flags.number !== undefined && flags.areaCode !== undefined) {
     throw new UsageError('Pass --number <e164> (exact, from search) OR --area-code <c>, not both.');
   }
+  // The carrier picks a number by area code or exact E.164 — there is no
+  // "any US number" purchase (the API refuses with 400 area_code_required).
+  if (flags.number === undefined && flags.areaCode === undefined) {
+    throw new UsageError(
+      'An area code is required: pass --area-code <c> (3-digit US area code, e.g. 415), or --number <e164> from `floe phone search`.',
+    );
+  }
   if (flags.number !== undefined && !US_E164.test(flags.number)) {
     throw new UsageError(
       `Invalid --number "${flags.number}" — US E.164, e.g. +14155550123 (find one with \`floe phone search\`).`,
@@ -260,8 +267,7 @@ export async function phoneBuyCommand(flags: PhoneFlags): Promise<void> {
   const ctx = await devContext(flags);
   const agent = await targetAgent(ctx, flags.agent);
   const agentName = agent.name ?? agent.id;
-  const what =
-    flags.number ?? (flags.areaCode ? `a number in area code ${flags.areaCode}` : 'a US phone number');
+  const what = flags.number ?? `a number in area code ${flags.areaCode}`;
   // Money moves at purchase: the first month's rental is debited immediately.
   await confirmAction(
     `buy ${what} for agent "${agentName}" — the first month's rental debits the agent balance now`,
@@ -279,8 +285,8 @@ export async function phoneBuyCommand(flags: PhoneFlags): Promise<void> {
       ctx.api.devRaw('POST', `/v1/developer/agents/${agent.id}/numbers`, body),
     );
   } catch (err) {
-    // The phone routes carry their explanation in a `detail` field the shared
-    // error mapper doesn't read — remap the common codes to real sentences.
+    // The shared error mapper already surfaces the phone routes' `detail`
+    // sentence; the common codes get CLI-specific next steps on top.
     if (err instanceof ApiError && err.code === 'number_exists') {
       throw new ApiError(
         `Agent "${agentName}" already has a live phone number — one per agent. Release it first: floe phone release <numberId> (ids: \`floe phone list --json\`).`,
@@ -292,7 +298,7 @@ export async function phoneBuyCommand(flags: PhoneFlags): Promise<void> {
       throw new ApiError(
         flags.number
           ? `${flags.number} is no longer available — run \`floe phone search\` again.`
-          : `No US numbers available${flags.areaCode ? ` in area code ${flags.areaCode}` : ''} — try another area code.`,
+          : `No US numbers available in area code ${flags.areaCode} — try another area code.`,
         err.status,
         err.code,
       );
@@ -645,7 +651,7 @@ export const phoneDef: CommandDef = {
   name: 'phone',
   summary: 'search | buy | list | release | calls | usage | voice | test-call — Floe Phone',
   usage: `Usage: floe phone search [--area-code <c>] [--agent <name|id>]
-       floe phone buy [--number <e164> | --area-code <c>] [--agent <name|id>] [--yes]
+       floe phone buy (--area-code <c> | --number <e164>) [--agent <name|id>] [--yes]
        floe phone list [--all] [--agent <name|id>]
        floe phone release <numberId> [--agent <name|id>] [--yes]
        floe phone calls <numberId> [--limit <n>] [--agent <name|id>]
@@ -659,8 +665,10 @@ Floe Phone: give an agent a real US phone number, metered on the same ledger.
 Default agent: the one this machine uses (switch with \`floe use\`).
   search       Preview purchasable US local numbers (free); buy an exact one
                with buy --number
-  buy          Buy a number and bind it to the agent — the FIRST MONTH'S RENTAL
-               debits the agent balance immediately (confirms; --yes to skip)
+  buy          Buy a number in --area-code <c> (required; or an exact
+               --number from search) and bind it to the agent — the FIRST
+               MONTH'S RENTAL debits the agent balance immediately
+               (confirms; --yes to skip)
   list         The agent's numbers, history included; --all shows every number
                across your fleet with 7-day calls and month-to-date spend
   release      Release a number permanently — IRREVERSIBLE; type the number

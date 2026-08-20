@@ -37,7 +37,9 @@ interface RequestOptions {
   timeoutMs?: number;
 }
 
-/** Developer-surface errors: {error, message?, details?, next?:{hint}}. Gateway: {error:{message,type,code}}. */
+/** Developer-surface errors: {error, message?|detail?, details?, next?:{hint}}. Gateway: {error:{message,type,code}}.
+ *  `message` (auth/accounts) and `detail` (phone, voice, calls) are both the
+ *  human sentence for the `error` code — prefer either over the bare code. */
 async function toApiError(res: Response): Promise<ApiError> {
   let message = `HTTP ${res.status}`;
   let code: string | undefined;
@@ -47,7 +49,12 @@ async function toApiError(res: Response): Promise<ApiError> {
     const err = body.error;
     if (typeof err === 'string') {
       code = err;
-      message = typeof body.message === 'string' ? body.message : err;
+      message =
+        typeof body.message === 'string'
+          ? body.message
+          : typeof body.detail === 'string'
+            ? body.detail
+            : err;
     } else if (err && typeof err === 'object') {
       const oai = err as Record<string, unknown>;
       if (typeof oai.message === 'string') message = oai.message;

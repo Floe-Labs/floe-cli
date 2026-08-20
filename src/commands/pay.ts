@@ -127,7 +127,14 @@ async function proxyRefusal(res: Response): Promise<ApiError> {
     const err = body.error;
     if (typeof err === 'string') {
       code = err;
-      message = typeof body.message === 'string' ? body.message : err;
+      // `message` or `detail` carry the human sentence for the code
+      // (same precedence as FloeApi's toApiError — keep them in step).
+      message =
+        typeof body.message === 'string'
+          ? body.message
+          : typeof body.detail === 'string'
+            ? body.detail
+            : err;
     } else if (err && typeof err === 'object') {
       const oai = err as Record<string, unknown>;
       if (typeof oai.message === 'string') message = oai.message;
