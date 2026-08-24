@@ -3,6 +3,11 @@
 The full Floe platform from your terminal — setup, metered calls, agents, keys, budgets,
 policies, billing, funds, and phone. Built for humans and for AI coding agents.
 
+Floe tells you what every AI call really costs: it costs each call the moment it ends across
+every vendor — telephony, STT, LLM, TTS, tools — on one ledger, ties the spend to the client
+and campaign, and shows your margin per contract, so you can bill your own customers off those
+actuals and price the next deal on real numbers. This CLI drives all of it from your terminal.
+
 ```bash
 npx @floelabs/cli init
 ```
