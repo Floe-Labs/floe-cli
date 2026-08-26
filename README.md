@@ -1,5 +1,10 @@
 # Floe CLI
 
+[![npm version](https://img.shields.io/npm/v/@floelabs/cli.svg)](https://www.npmjs.com/package/@floelabs/cli)
+[![npm downloads](https://img.shields.io/npm/dm/@floelabs/cli.svg)](https://www.npmjs.com/package/@floelabs/cli)
+[![CI](https://github.com/Floe-Labs/floe-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Floe-Labs/floe-cli/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 The full Floe platform from your terminal — setup, metered calls, agents, keys, budgets,
 policies, billing, funds, and phone. Built for humans and for AI coding agents.
 
