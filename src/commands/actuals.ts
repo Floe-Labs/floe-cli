@@ -456,11 +456,9 @@ function printRangeFooter(res: RangeEcho): void {
 }
 
 /**
- * The coverage note voice-heavy accounts need BEFORE they draw a conclusion
- * from a low exact/period-rate share. TTS, streaming STT, duration-billed
- * realtime and telephony transport are Floe-MEASURED, not vendor-reported, so
- * they are structurally barred from period-rate — their dollars land in a
- * named residual. Better said here than discovered.
+ * The coverage note voice-heavy accounts need before they draw a conclusion
+ * from a low priced-leg share — it is a property of what vendors publish, not
+ * a gap in the data.
  */
 function printPendingManualNote(totals: RangeTotals): void {
   const pending = totals.perStatus?.pending?.count ?? 0;
@@ -469,7 +467,7 @@ function printPendingManualNote(totals: RangeTotals): void {
   const notes: string[] = [];
   if (pending > 0) {
     notes.push(
-      `${pending} pending — the vendor hasn't published these costs yet. For a Twilio call this is the STEADY STATE, not a defect: Call.price is populated asynchronously after the call completes.`,
+      `${pending} pending — the vendor hasn't published these costs yet. For a recent call this is the steady state, not a defect.`,
     );
   }
   if (manual > 0) {
@@ -1253,15 +1251,12 @@ Every cost carries a STATUS, and a status is a claim:
   pending      the vendor hasn't published this cost yet — units, no dollars
   manual       no vendor API publishes this — upload the invoice
 
-WHEN A COST ARRIVES. Costed the moment the call ends: ElevenLabs only.
-Within ~10 minutes: telephony and Deepgram. Next day: every LLM and cloud leg.
-So \`pending\` is the STEADY STATE for a recent Twilio call — Call.price is
-populated asynchronously after the call completes. That is not a defect.
+WHEN A COST ARRIVES. Some legs can be costed the moment a call ends, others
+only on the vendor's next-day batch. So \`pending\` on a recent call is the
+STEADY STATE, not a defect.
 
-COVERAGE READS LOW ON VOICE-HEAVY ACCOUNTS AT LAUNCH. TTS, streaming STT,
-duration-billed realtime and telephony transport are Floe-measured, not
-vendor-reported, so they are structurally barred from period-rate; their
-dollars go to a named residual instead.
+COVERAGE READS LOW ON VOICE-HEAVY ACCOUNTS AT LAUNCH — a property of what
+vendors publish, not a gap in the data.
 
   legs         Per-leg captured vendor cost, keyset-paginated
   calls        Server-side by-call rollup with a per-call composition line
