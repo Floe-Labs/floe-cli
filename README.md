@@ -80,6 +80,7 @@ floe test --voice           # STT → LLM → TTS: three legs, one key, one bill
 |---|---|
 | `floe activity` | Unified spend/activity feed with filters |
 | `floe usage` | Spend series \| summary \| coverage — usage analytics |
+| `floe actuals` | legs \| calls \| rollups \| findings \| connections \| connect \| verify \| invoices — reconciled vendor cost |
 | `floe ledger` | Cross-source spend ledger, grouped |
 | `floe billing` | mtd \| invoice \| export \| charges — billing and exports |
 | `floe account` | show \| rename — account identity |
@@ -103,7 +104,7 @@ floe test --voice           # STT → LLM → TTS: three legs, one key, one bill
 | `floe phone` | search \| buy \| list \| release \| calls \| usage \| voice \| test-call — Floe Phone |
 | `floe actions` | list \| report — cost-per-action rollups and outcomes |
 | `floe orchestrators` | connect \| list \| rotate \| enable \| disable \| remove — Vapi/Retell/Bland |
-| `floe vendors` | status — live-verified vendor probes |
+| `floe vendors` | status — live-verified probes of Floe's marketplace vendors (not your vendor bills — that's `floe actuals`) |
 
 ## Two keys, handled for you
 

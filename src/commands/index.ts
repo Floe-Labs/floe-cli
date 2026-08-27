@@ -1,6 +1,7 @@
 import type { CommandDef } from '../lib/command.js';
 import { accountDef } from './account.js';
 import { actionsDef } from './actions.js';
+import { actualsDef } from './actuals.js';
 import { activityDef } from './activity.js';
 import { agentsDef } from './agents.js';
 import { allowlistDef } from './allowlist.js';
@@ -47,7 +48,7 @@ export const SECTIONS: Section[] = [
   },
   {
     title: 'OBSERVABILITY & BILLING',
-    commands: [activityDef, usageDef, ledgerDef, billingDef, accountDef, teamDef],
+    commands: [activityDef, usageDef, actualsDef, ledgerDef, billingDef, accountDef, teamDef],
   },
   { title: 'MONEY', commands: [fundsDef, cashoutDef] },
   {
