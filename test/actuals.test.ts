@@ -503,6 +503,76 @@ describe('floe actuals invoices', () => {
     expect(stdout).toContain('invoice #11');
   });
 
+  it('upload sends a non-CSV down the object-storage lane without leaking the Floe key', async () => {
+    // The security invariant this pins: the storage PUT goes to a THIRD-PARTY
+    // origin, so it must be a raw fetch carrying only the signed headers. If it
+    // ever went through FloeApi it would attach the developer key to Google.
+    const file = `${dir}/invoice.pdf`;
+    writeFileSync(file, '%PDF-1.4 not really a pdf\n');
+
+    const fetchMock = vi.fn(async (url: string, _init?: FetchInit) => {
+      if (String(url).includes('/upload-url')) {
+        return jsonRes(201, {
+          document: { id: 21, vendor: 'twilio', filename: 'invoice.pdf', state: 'pending' },
+          duplicate: false,
+          upload: {
+            url: 'https://storage.googleapis.com/floe-vendor-invoices/o/21?X-Goog-Signature=abc',
+            method: 'PUT',
+            headers: { 'content-type': 'application/pdf', 'content-length': '25' },
+            expiresAt: '2026-08-27T00:15:00.000Z',
+          },
+        });
+      }
+      if (String(url).includes('/finalize')) {
+        return jsonRes(200, {
+          document: {
+            id: 21,
+            vendor: 'twilio',
+            filename: 'invoice.pdf',
+            state: 'needs_review',
+            parseStatus: 'needs_review',
+            footStatus: 'unfooted',
+            parsedTotalNative: null,
+            currency: 'usd',
+            parseError: null,
+            footedAt: null,
+          },
+          duplicate: false,
+        });
+      }
+      return jsonRes(200, {});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await main(['actuals', 'invoices', 'upload', '--vendor', 'twilio', '--file', file]);
+
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(fetchMock.mock.calls).toHaveLength(3);
+
+    // 1 · mint
+    expect(String(fetchMock.mock.calls[0]![0])).toBe(
+      'https://credit-api.floelabs.xyz/v1/developer/actuals/documents/upload-url',
+    );
+
+    // 2 · the storage PUT — signed headers VERBATIM, and no Floe credential.
+    const [putUrl, putInit] = fetchMock.mock.calls[1]!;
+    expect(String(putUrl)).toContain('storage.googleapis.com');
+    expect(putInit?.method).toBe('PUT');
+    expect(putInit?.headers).toEqual({
+      'content-type': 'application/pdf',
+      'content-length': '25',
+    });
+    const putHeaderNames = Object.keys(putInit?.headers ?? {}).map((h) => h.toLowerCase());
+    expect(putHeaderNames).not.toContain('authorization');
+    expect(JSON.stringify(putInit ?? {})).not.toContain('floe_live_');
+
+    // 3 · finalize, only after the bytes landed
+    expect(String(fetchMock.mock.calls[2]![0])).toBe(
+      'https://credit-api.floelabs.xyz/v1/developer/actuals/documents/21/finalize',
+    );
+    expect(stdout).toContain('invoice #21');
+  });
+
   it('rejects an unknown --foot-status before any network call', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);

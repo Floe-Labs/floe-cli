@@ -415,8 +415,11 @@ function subtotalLines(s: SubtotalBlock | RangeTotals): Array<[string, string]> 
   if (s.totalRaw !== null) {
     rows.push(['Total', bold(rawToUsd(s.totalRaw))]);
   } else {
-    const why = s.totalBlockedBy.length > 0 ? ` ${dim(`(${s.totalBlockedBy.join(', ')})`)}` : '';
-    rows.push(['Total', `${yellow(s.totalLabel ?? 'partial — lower bound')}${why}`]);
+    const why =
+      s.totalBlockedBy.length > 0
+        ? ` ${dim(`(${s.totalBlockedBy.map(sanitizeText).join(', ')})`)}`
+        : '';
+    rows.push(['Total', `${yellow(sanitizeText(s.totalLabel ?? 'partial — lower bound'))}${why}`]);
   }
   return rows;
 }
@@ -439,7 +442,9 @@ function printRangeFooter(res: RangeEcho): void {
   if (res.subtotals.unsupportedFilters.length > 0) {
     lines.push(
       warn(
-        `Range subtotals ignore these filters: ${res.subtotals.unsupportedFilters.join(', ')} — the page rows are filtered, the range block is not.`,
+        `Range subtotals ignore these filters: ${res.subtotals.unsupportedFilters
+          .map(sanitizeText)
+          .join(', ')} — the page rows are filtered, the range block is not.`,
       ),
     );
   }
@@ -458,8 +463,8 @@ function printRangeFooter(res: RangeEcho): void {
  * named residual. Better said here than discovered.
  */
 function printPendingManualNote(totals: RangeTotals): void {
-  const pending = totals.perStatus?.pending.count ?? 0;
-  const manual = totals.perStatus?.manual.count ?? 0;
+  const pending = totals.perStatus?.pending?.count ?? 0;
+  const manual = totals.perStatus?.manual?.count ?? 0;
   if (pending === 0 && manual === 0) return;
   const notes: string[] = [];
   if (pending > 0) {
@@ -611,7 +616,7 @@ export async function actualsCallsCommand(flags: ActualsFlags): Promise<void> {
     composition(call),
     call.totalRaw !== null
       ? bold(rawToUsd(call.totalRaw))
-      : yellow(call.totalLabel ?? 'partial — lower bound'),
+      : yellow(sanitizeText(call.totalLabel ?? 'partial — lower bound')),
   ]);
   process.stdout.write(`${table(['CALL', 'LEGS', 'VENDORS', 'COMPOSITION', 'TOTAL'], rows)}\n`);
   process.stdout.write(
@@ -664,7 +669,7 @@ export async function actualsRollupsCommand(flags: ActualsFlags): Promise<void> 
     cyan(rawToUsd(row.periodRateRaw)),
     row.totalRaw !== null
       ? bold(rawToUsd(row.totalRaw))
-      : yellow(row.totalLabel ?? 'partial — lower bound'),
+      : yellow(sanitizeText(row.totalLabel ?? 'partial — lower bound')),
   ]);
   process.stdout.write(
     `${table([res.by.toUpperCase(), 'LEGS', 'EXACT', 'PERIOD-RATE', 'TOTAL'], rows)}\n`,
