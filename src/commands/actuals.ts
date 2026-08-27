@@ -467,7 +467,7 @@ function printPendingManualNote(totals: RangeTotals): void {
   const notes: string[] = [];
   if (pending > 0) {
     notes.push(
-      `${pending} pending — the vendor hasn't published these costs yet. For a recent call this is the steady state, not a defect.`,
+      `${pending} pending — the vendor hasn't published these costs yet. For a recent call this is the STEADY STATE, not a defect.`,
     );
   }
   if (manual > 0) {
@@ -476,7 +476,7 @@ function printPendingManualNote(totals: RangeTotals): void {
     );
   }
   notes.push(
-    'Voice-heavy accounts read low at launch: TTS, streaming STT, duration-billed realtime and telephony transport are Floe-measured rather than vendor-reported, so they can never reach period-rate.',
+    'Voice-heavy accounts read a lower priced-leg share at launch — a property of what vendors publish, not a gap in the data.',
   );
   process.stdout.write(`${dim(notes.join('\n'))}\n`);
 }

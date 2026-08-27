@@ -219,13 +219,13 @@ describe('floe actuals legs', () => {
     expect(stdout).toContain('unresolved_legs');
   });
 
-  it('states that pending is the steady state for a recent Twilio call', async () => {
+  it('states that pending is the steady state for a recent call', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonRes(200, LEGS_BODY)));
 
     await main(['actuals', 'legs']);
 
     expect(stdout).toContain('STEADY STATE');
-    expect(stdout).toContain('Floe-measured');
+    expect(stdout).toContain('property of what vendors publish');
   });
 
   it('--json emits the payload verbatim', async () => {
