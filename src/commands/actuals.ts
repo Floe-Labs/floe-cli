@@ -271,7 +271,7 @@ const STATUSES: readonly ReconciliationStatus[] = [
   'invoiced',
 ];
 
-const ROLLUP_DIMENSIONS = ['customer', 'campaign', 'agent', 'vendor', 'time'] as const;
+const ROLLUP_DIMENSIONS = ['customer', 'campaign', 'agent', 'vendor', 'time', 'channel'] as const;
 
 const FINDING_STATES = ['open', 'cleared', 'all'] as const;
 
@@ -1226,7 +1226,7 @@ export const actualsDef: CommandDef = {
   summary: 'legs | calls | rollups | findings | connect | invoices — reconciled vendor cost',
   usage: `Usage: floe actuals legs      [filters] [--cursor <c>]
        floe actuals calls     [filters] [--cursor <c>]
-       floe actuals rollups   --by <customer|campaign|agent|vendor|time> [filters]
+       floe actuals rollups   --by <customer|campaign|agent|vendor|time|channel> [filters]
        floe actuals findings  [--state <open|cleared|all>] [--kind <k>] [--severity <s>]
        floe actuals findings resolve <id> --resolution <acknowledged|wont_fix|fixed>
        floe actuals connections
