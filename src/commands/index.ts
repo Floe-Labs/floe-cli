@@ -15,6 +15,7 @@ import { embedDef } from './embed.js';
 import { estimateDef } from './estimate.js';
 import { fundsDef } from './funds.js';
 import { initDef } from './init.js';
+import { interactionsDef } from './interactions.js';
 import { keysDef } from './keys.js';
 import { ledgerDef } from './ledger.js';
 import { modelsDef } from './models.js';
@@ -48,7 +49,16 @@ export const SECTIONS: Section[] = [
   },
   {
     title: 'OBSERVABILITY & BILLING',
-    commands: [activityDef, usageDef, actualsDef, ledgerDef, billingDef, accountDef, teamDef],
+    commands: [
+      activityDef,
+      usageDef,
+      interactionsDef,
+      actualsDef,
+      ledgerDef,
+      billingDef,
+      accountDef,
+      teamDef,
+    ],
   },
   { title: 'MONEY', commands: [fundsDef, cashoutDef] },
   {
