@@ -468,6 +468,48 @@ describe('floe interactions rollups', () => {
     expect(stdout).toContain('1 task(s) have no end time yet');
   });
 
+  it('refuses --channel on rollups instead of silently dropping it', async () => {
+    // `InteractionFlags` is shared across the subcommands but `readQuery` never
+    // reads `channel`, so this used to return UNFILTERED totals — the "figures
+    // that look filtered but aren't" failure the API itself avoids by refusing
+    // `channel` on this route.
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await main(['interactions', 'rollups', '--by', 'customer', '--channel', 'voice']);
+
+    expect(process.exitCode).toBe(2);
+    expect(stderr).toContain('--channel applies to');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses --order on rollups instead of silently dropping it', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await main(['interactions', 'rollups', '--by', 'customer', '--order', 'cost']);
+
+    expect(process.exitCode).toBe(2);
+    expect(stderr).toContain('--order applies to');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sanitizes the server-supplied dimension before it reaches the terminal', async () => {
+    // `api.dev` does not validate the response at runtime, and `table` only
+    // ignores ANSI for width — it does not strip control characters. A hostile
+    // or corrupt `by` would otherwise be written straight to stdout.
+    const hostile = { ...ROLLUPS_BODY, by: 'cust\u001b[31mo\u0007mer' };
+    const fetchMock = vi.fn(async (_url: string, _init?: FetchInit) => jsonRes(200, hostile));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await main(['interactions', 'rollups', '--by', 'customer']);
+
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(stdout).not.toContain('\u001b[31m');
+    expect(stdout).not.toContain('\u0007');
+    expect(stdout).toContain('CUSTOMER');
+  });
+
   it('rejects an unknown --by before any network call', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);

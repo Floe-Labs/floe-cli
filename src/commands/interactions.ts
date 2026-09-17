@@ -556,6 +556,19 @@ export async function interactionsShowCommand(id: string, flags: InteractionFlag
 
 export async function interactionsRollupsCommand(flags: InteractionFlags): Promise<void> {
   const by = oneOf(flags.by ?? 'customer', ROLLUP_DIMENSIONS, '--by')!;
+  // REFUSE LIST-ONLY FLAGS RATHER THAN DROPPING THEM. `InteractionFlags` is
+  // shared across the subcommands, but `readQuery` never reads `channel` or
+  // `order` — so `interactions rollups --channel voice` would silently return
+  // UNFILTERED totals, which is the "figures that look filtered but aren't"
+  // failure the API itself refuses `channel` on this route to avoid.
+  if (flags.channel !== undefined) {
+    throw new UsageError(
+      '--channel applies to `floe interactions list` only. The rollups route refuses it; group with `--by channel` instead.',
+    );
+  }
+  if (flags.order !== undefined) {
+    throw new UsageError('--order applies to `floe interactions list` only.');
+  }
   const q = readQuery(flags);
   q.set('by', by);
   const { api } = await devContext(flags);
@@ -583,7 +596,11 @@ export async function interactionsRollupsCommand(flags: InteractionFlags): Promi
       : `${yellow('—')} ${dim(`(${row.costPerMinuteBlockedBy.map(sanitizeText).join(', ') || 'unknown'})`)}`,
   ]);
   process.stdout.write(
-    `${table([res.by.toUpperCase(), 'TASKS', 'DURATION', 'VENDOR COST', 'COST/MIN'], rows)}\n`,
+    // `res.by` is server-supplied and `api.dev` does not validate the response at
+    // runtime; `table` only ignores ANSI for width, it does not strip control
+    // characters. Sanitize before it reaches stdout, like every other rendered
+    // server value in this file.
+    `${table([sanitizeText(res.by).toUpperCase(), 'TASKS', 'DURATION', 'VENDOR COST', 'COST/MIN'], rows)}\n`,
   );
   process.stdout.write(
     `${dim('$/min is stated only when the cost is a real total AND every task in the row has closed. Otherwise the row names what blocked it — an unknown-duration $/min is unknowable, not a lower bound.')}\n`,
