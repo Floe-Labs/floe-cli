@@ -197,7 +197,7 @@ const STATUSES = ['pending', 'manual', 'exact', 'period-rate', 'invoiced'] as co
 const CHANNELS = ['voice', 'chat', 'email', 'video', 'job', 'sms'] as const;
 const OUTCOMES = ['success', 'failure', 'partial', 'unknown'] as const;
 const ORDERS = ['started', 'cost'] as const;
-const ROLLUP_DIMENSIONS = ['customer', 'campaign', 'agent', 'channel', 'outcome'] as const;
+const ROLLUP_DIMENSIONS = ['customer', 'campaign', 'agent', 'channel', 'outcome', 'task_type'] as const;
 
 const PUBLIC_ID_RE = /^int_[0-9a-f]{16}$/;
 
@@ -622,7 +622,7 @@ export const interactionsDef: CommandDef = {
   summary: 'list | show | rollups — what one task (call or job) actually cost',
   usage: `Usage: floe interactions list    [filters] [--order started|cost] [--cursor <c>]
        floe interactions show    <int_id>
-       floe interactions rollups --by <customer|campaign|agent|channel|outcome> [filters]
+       floe interactions rollups --by <customer|campaign|agent|channel|outcome|task_type> [filters]
 
 A task is ONE unit of work — a call, or a non-call job — with every vendor leg
 it spent money on joined into one row: telephony, STT, LLM, TTS, tools. This is
