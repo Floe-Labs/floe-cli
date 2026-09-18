@@ -118,8 +118,12 @@ rolled up by the chosen dimension.
                     customer/task group by the X-Floe-Customer-Id /
                     X-Floe-Task-Id tags on calls; untagged spend stays
                     visible as its own bucket.
+                    customer and task are ATTRIBUTION dimensions and need a
+                    Pro plan — on Free they return 403 plan_required. source
+                    and agent are open on every plan.
                     campaign is DEPRECATED — it groups by task id here, not
-                    by campaign. Use task for the same data, or
+                    by campaign, and stops working on 2027-01-15. Use task
+                    for the same data (same Pro gate), or
                     /interactions/rollups?by=campaign for a real campaign.
   --days <n>        Window in days, 1-90 (default 30)
   --agent <ref>     Narrow to one agent by name or id (default: all agents)
