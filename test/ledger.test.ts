@@ -125,6 +125,36 @@ describe('floe ledger', () => {
     expect(JSON.parse(stdout)).toEqual(LEDGER);
   });
 
+  it('accepts --group-by task, the real name for the campaign alias', async () => {
+    const spy = stubFetch({ '/v1/developer/ledger': { body: { ...LEDGER, groupBy: 'task' } } });
+    await main(['ledger', '--group-by', 'task']);
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(ledgerCall(spy).url.searchParams.get('groupBy')).toBe('task');
+    expect(stderr).toBe(''); // the supported spelling warns about nothing
+  });
+
+  it('warns that --group-by campaign groups by task id here', async () => {
+    // On THIS route campaign has always meant X-Floe-Task-Id — proxy_requests
+    // has no campaign column — which is a different meaning from
+    // /interactions/rollups?by=campaign. Warned locally so the rename is visible
+    // to someone who never inspects response headers.
+    const spy = stubFetch({ '/v1/developer/ledger': { body: { ...LEDGER, groupBy: 'campaign' } } });
+    await main(['ledger', '--group-by', 'campaign']);
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(ledgerCall(spy).url.searchParams.get('groupBy')).toBe('campaign');
+    expect(stderr).toContain('deprecated');
+    expect(stderr).toContain('--group-by task');
+  });
+
+  it('keeps --json parseable when the deprecation warning fires', async () => {
+    // The warning goes to stderr precisely so this stays true: a machine
+    // consumer piping stdout must not start receiving prose.
+    stubFetch({ '/v1/developer/ledger': { body: LEDGER } });
+    await main(['ledger', '--group-by', 'campaign', '--json']);
+    expect(JSON.parse(stdout)).toEqual(LEDGER);
+    expect(stderr).toContain('deprecated');
+  });
+
   it('rejects an invalid --group-by before any network call', async () => {
     const spy = stubFetch({});
     await main(['ledger', '--group-by', 'vendor']);
