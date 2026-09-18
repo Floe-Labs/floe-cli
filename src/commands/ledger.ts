@@ -1,6 +1,6 @@
 import { expectArgs, str, type CommandDef } from '../lib/command.js';
 import { devContext, resolveAgentRef } from '../lib/context.js';
-import { bold, dim, printJson, sanitizeText, UsageError } from '../lib/output.js';
+import { bold, dim, errDim, printJson, sanitizeText, UsageError } from '../lib/output.js';
 import { table } from '../lib/table.js';
 import { rawToUsd } from '../lib/usdc.js';
 
@@ -65,9 +65,14 @@ export async function ledgerCommand(flags: LedgerFlags): Promise<void> {
   }
   if (groupBy === DEPRECATED_GROUP_DIMENSION) {
     // stderr, not stdout: --json must stay machine-parseable.
+    // errDim, not dim: `dim` is gated on process.stdout.isTTY, so styling text
+    // written to STDERR by it emits ANSI codes into a redirected stderr when
+    // stdout is a terminal, and drops styling when only stderr is. output.ts
+    // exports the err* variants for exactly this.
     process.stderr.write(
-      `${dim('--group-by campaign is deprecated here: it groups by task id (X-Floe-Task-Id), not campaign. ' +
-        'Use --group-by task for the same data, or /interactions/rollups?by=campaign for a real campaign rollup.')}\n`,
+      `${errDim('--group-by campaign is deprecated here: it groups by task id (X-Floe-Task-Id), not campaign. ' +
+        'It stops working on 2026-10-19. Use --group-by task for the same data, or ' +
+        '/interactions/rollups?by=campaign for a real campaign rollup.')}\n`,
     );
   }
   const days = parseDays(flags.days);
@@ -108,7 +113,7 @@ export async function ledgerCommand(flags: LedgerFlags): Promise<void> {
 export const ledgerDef: CommandDef = {
   name: 'ledger',
   summary: 'Cross-source spend ledger, grouped',
-  usage: `Usage: floe ledger [--group-by source|customer|task|agent] [--days <n>] [--agent <ref>]
+  usage: `Usage: floe ledger [--group-by source|customer|task|agent|campaign] [--days <n>] [--agent <ref>]
 
 Cross-source spend ledger: one money view across Floe rails (gateway, x402
 proxy, Floe Phone) and orchestrator-reconciled spend (Vapi/Retell/Bland),
@@ -122,7 +127,7 @@ rolled up by the chosen dimension.
                     Pro plan — on Free they return 403 plan_required. source
                     and agent are open on every plan.
                     campaign is DEPRECATED — it groups by task id here, not
-                    by campaign, and stops working on 2027-01-15. Use task
+                    by campaign, and stops working on 2026-10-19. Use task
                     for the same data (same Pro gate), or
                     /interactions/rollups?by=campaign for a real campaign.
   --days <n>        Window in days, 1-90 (default 30)
