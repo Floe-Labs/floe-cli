@@ -1,6 +1,6 @@
 import { expectArgs, str, type CommandDef } from '../lib/command.js';
 import { devContext, resolveAgentRef } from '../lib/context.js';
-import { bold, dim, printJson, sanitizeText, UsageError } from '../lib/output.js';
+import { bold, dim, errDim, printJson, sanitizeText, UsageError } from '../lib/output.js';
 import { table } from '../lib/table.js';
 import { rawToUsd } from '../lib/usdc.js';
 
@@ -12,8 +12,15 @@ import { rawToUsd } from '../lib/usdc.js';
  */
 
 /** Valid groupBy dimensions — mirrors the API's GROUP_DIMENSIONS (ledger.ts). */
-const GROUP_DIMENSIONS = ['source', 'customer', 'campaign', 'agent'] as const;
+const GROUP_DIMENSIONS = ['source', 'customer', 'campaign', 'agent', 'task'] as const;
 const GROUP_SET = new Set<string>(GROUP_DIMENSIONS);
+
+/** P2.1 — `campaign` on THIS route has always grouped by X-Floe-Task-Id (the
+ *  ledger reads proxy_requests, which has no campaign column), which is a
+ *  different meaning from /interactions/rollups?by=campaign. `task` is the same
+ *  data under its real name. Warned locally so the rename is visible even to a
+ *  caller who never inspects response headers. */
+const DEPRECATED_GROUP_DIMENSION = 'campaign';
 
 interface LedgerRow {
   key: string;
@@ -56,6 +63,18 @@ export async function ledgerCommand(flags: LedgerFlags): Promise<void> {
   if (!GROUP_SET.has(groupBy)) {
     throw new UsageError(`Unknown --group-by "${groupBy}". Supported: ${GROUP_DIMENSIONS.join(', ')}.`);
   }
+  if (groupBy === DEPRECATED_GROUP_DIMENSION) {
+    // stderr, not stdout: --json must stay machine-parseable.
+    // errDim, not dim: `dim` is gated on process.stdout.isTTY, so styling text
+    // written to STDERR by it emits ANSI codes into a redirected stderr when
+    // stdout is a terminal, and drops styling when only stderr is. output.ts
+    // exports the err* variants for exactly this.
+    process.stderr.write(
+      `${errDim('--group-by campaign is deprecated here: it groups by task id (X-Floe-Task-Id), not campaign. ' +
+        'It stops working on 2026-10-19. Use --group-by task for the same data, or ' +
+        '/interactions/rollups?by=campaign for a real campaign rollup.')}\n`,
+    );
+  }
   const days = parseDays(flags.days);
 
   const ctx = await devContext(flags);
@@ -94,16 +113,23 @@ export async function ledgerCommand(flags: LedgerFlags): Promise<void> {
 export const ledgerDef: CommandDef = {
   name: 'ledger',
   summary: 'Cross-source spend ledger, grouped',
-  usage: `Usage: floe ledger [--group-by source|customer|campaign|agent] [--days <n>] [--agent <ref>]
+  usage: `Usage: floe ledger [--group-by source|customer|task|agent|campaign] [--days <n>] [--agent <ref>]
 
 Cross-source spend ledger: one money view across Floe rails (gateway, x402
 proxy, Floe Phone) and orchestrator-reconciled spend (Vapi/Retell/Bland),
 rolled up by the chosen dimension.
 
-  --group-by <dim>  source (default) | customer | campaign | agent.
-                    customer/campaign group by the X-Floe-Customer-Id /
+  --group-by <dim>  source (default) | customer | task | agent.
+                    customer/task group by the X-Floe-Customer-Id /
                     X-Floe-Task-Id tags on calls; untagged spend stays
                     visible as its own bucket.
+                    customer and task are ATTRIBUTION dimensions and need a
+                    Pro plan — on Free they return 403 plan_required. source
+                    and agent are open on every plan.
+                    campaign is DEPRECATED — it groups by task id here, not
+                    by campaign, and stops working on 2026-10-19. Use task
+                    for the same data (same Pro gate), or
+                    /interactions/rollups?by=campaign for a real campaign.
   --days <n>        Window in days, 1-90 (default 30)
   --agent <ref>     Narrow to one agent by name or id (default: all agents)
 
