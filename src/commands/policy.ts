@@ -18,7 +18,7 @@ import { rawToUsd, usdToRaw } from '../lib/usdc.js';
 export interface PolicyRow {
   id: number;
   scope?: 'agent' | 'developer';
-  kind: 'session' | 'task' | 'api' | 'vendor' | 'key';
+  kind: 'session' | 'task' | 'api' | 'vendor' | 'key' | 'customer';
   matchKey: string | null;
   matchKind?: 'host_exact' | 'host_suffix' | 'recipient' | null;
   limitRaw: string;
@@ -247,7 +247,12 @@ export async function policyCreateCommand(flags: PolicyFlags): Promise<void> {
   if (!kind) {
     throw new UsageError('Missing --kind. Agent policies: task, api, vendor; --team also allows session.');
   }
-  const validKinds = team ? ['session', 'task', 'api', 'vendor'] : ['task', 'api', 'vendor'];
+  // 'customer' is team-only, mirroring the API's createTeamPolicySchema: an
+  // agent-scoped customer cap would count one agent's spend while reading as
+  // the whole client's budget.
+  const validKinds = team
+    ? ['session', 'task', 'api', 'vendor', 'customer']
+    : ['task', 'api', 'vendor'];
   if (!validKinds.includes(kind)) {
     throw new UsageError(
       team
