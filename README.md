@@ -81,6 +81,7 @@ floe test --voice           # STT → LLM → TTS: three legs, one key, one bill
 | `floe activity` | Unified spend/activity feed with filters |
 | `floe usage` | Spend series \| summary \| coverage — usage analytics |
 | `floe interactions` | list \| show \| rollups — what one task (call or job) actually cost, every vendor leg joined |
+| `floe outcomes` | list \| get \| confirm \| void \| confirm-distinct — what a task produced, bound to the call |
 | `floe actuals` | legs \| calls \| rollups \| findings \| connections \| connect \| verify \| invoices — reconciled vendor cost |
 | `floe ledger` | Cross-source spend ledger, grouped |
 | `floe billing` | mtd \| invoice \| export \| charges — billing and exports |
