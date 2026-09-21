@@ -20,6 +20,7 @@ import { keysDef } from './keys.js';
 import { ledgerDef } from './ledger.js';
 import { modelsDef } from './models.js';
 import { orchestratorsDef } from './orchestrators.js';
+import { outcomesDef } from './outcomes.js';
 import { payDef } from './pay.js';
 import { phoneDef } from './phone.js';
 import { policyDef } from './policy.js';
@@ -53,6 +54,7 @@ export const SECTIONS: Section[] = [
       activityDef,
       usageDef,
       interactionsDef,
+      outcomesDef,
       actualsDef,
       ledgerDef,
       billingDef,
