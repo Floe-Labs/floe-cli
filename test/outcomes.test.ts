@@ -240,7 +240,31 @@ describe('outcomes confirm', () => {
     const listUrl = String(fetchMock.mock.calls[0]?.[0]);
     expect(listUrl).toContain('taskId=call-8821');
     expect(listUrl).toContain('status=reported%2Cconfirmed%2Cdisputed');
+    // Two rows is all it takes to answer "is this unique?" — asking for a
+    // default-sized page would read 100 to decide the same thing.
+    expect(listUrl).toContain('limit=2');
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/outcomes/oev_00112233445566aa/confirm');
+  });
+
+  /**
+   * The page itself says there may be more. Trusting a lone row on one page is
+   * how a second matching claim ends up ignored — so `hasMore` is read as a
+   * claim that exists and simply cannot be named here.
+   */
+  it('refuses a singleton page that reports more matching claims behind it', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(
+      listBody([BOUND], { hasMore: true, nextCursor: 'opaque-cursor' }),
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await main(['outcomes', 'confirm', '--task', 'call-8821', '--kind', 'meeting_booked']);
+
+    expect(process.exitCode).toBe(2);
+    expect(stderr).toContain('At least 1');
+    expect(stderr).toContain('and more');
+    expect(stderr).toContain('collision');
+    // Listed, then stopped. Nothing was written.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   /**
@@ -261,6 +285,36 @@ describe('outcomes confirm', () => {
     expect(stderr).toContain('oev_1122334455667788');
     // It listed, then stopped. Nothing was written.
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * `Number()` rounds silently past 2^53, so this would otherwise POST …992 —
+   * a billable quantity the operator never typed. The column ceiling is what
+   * catches it (2^53 sits far above 2^31), which is why one bound suffices
+   * rather than a separate safe-integer check.
+   */
+  it('refuses a --quantity that Number() would silently round', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await main(['outcomes', 'confirm', 'oev_00112233445566aa', '--quantity', '9007199254740993']);
+
+    expect(stderr).toContain('--quantity must be a whole number from 1 to 2147483647');
+    expect(process.exitCode).toBe(2);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  /** The column is a 32-bit int: above its ceiling the write fails inside the
+   *  database, which reaches the caller as a 500 for a plainly bad request. */
+  it('refuses a --quantity above the column ceiling', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await main(['outcomes', 'confirm', 'oev_00112233445566aa', '--quantity', '3000000000']);
+
+    expect(stderr).toContain('2147483647');
+    expect(process.exitCode).toBe(2);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('refuses --external-ref without --external-system before any network call', async () => {

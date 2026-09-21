@@ -339,6 +339,13 @@ async function resolveClaimId(
   const q = readQuery({ ...flags, limit: undefined, cursor: undefined });
   // Only claims that can still be acted on — a voided claim is not a candidate.
   q.set('status', 'reported,confirmed,disputed');
+  // TWO IS ENOUGH TO ANSWER THE ONLY QUESTION HERE: is this claim unique?
+  // Asking for one more than that also closes the paging hole — reading a
+  // default-sized first page and trusting a lone row would let a second
+  // matching claim sit on the next cursor while this silently picked one.
+  // `hasMore` is therefore treated as a further claim that simply cannot be
+  // named, not as a detail to page through.
+  q.set('limit', '2');
   const res = await ctx.api.dev<ListResponse>('GET', withQuery('/v1/developer/outcomes', q));
 
   const named = flags.task
@@ -350,10 +357,14 @@ async function resolveClaimId(
       `No current "${sanitizeText(flags.kind)}" claim on ${named}. List what is there: floe outcomes list --kind ${sanitizeText(flags.kind)}.`,
     );
   }
-  if (res.outcomes.length > 1) {
+  if (res.outcomes.length > 1 || res.hasMore) {
     const ids = res.outcomes.map((c) => c.eventId).join(', ');
+    const count = res.hasMore
+      ? `At least ${res.outcomes.length}`
+      : String(res.outcomes.length);
     throw new UsageError(
-      `${res.outcomes.length} current "${sanitizeText(flags.kind)}" claims on ${named} (${sanitizeText(ids)}). `
+      `${count} current "${sanitizeText(flags.kind)}" claims on ${named} `
+      + `(${sanitizeText(ids)}${res.hasMore ? ', and more' : ''}). `
       + 'That is a collision — one outcome reported twice, or two genuine outcomes — and this command will not pick one. '
       + 'Name the claim by its own id, or resolve the conflict with `floe outcomes confirm-distinct`.',
     );
@@ -377,8 +388,20 @@ async function printHead(ctx: DevContext, eventId: string, flags: OutcomesFlags)
 // ─── Writes ────────────────────────────────────────────────────────────────
 
 export async function outcomesConfirmCommand(arg: string | undefined, flags: OutcomesFlags): Promise<void> {
-  if (flags.quantity !== undefined && (!/^\d+$/.test(flags.quantity) || Number(flags.quantity) < 1)) {
-    throw new UsageError('--quantity must be a whole number of at least 1.');
+  if (flags.quantity !== undefined) {
+    const quantity = Number(flags.quantity);
+    // `outcome_events.quantity` is a 32-bit int, so anything above its ceiling
+    // fails inside the database rather than at the boundary — a 500 for what
+    // is plainly a bad request.
+    //
+    // That ceiling also subsumes the float problem: `Number()` rounds silently
+    // past 2^53, so "9007199254740993" would be POSTed as …992, a billable
+    // quantity the operator never typed — but 2^53 is far above 2^31, so an
+    // explicit `Number.isSafeInteger` check could never be the clause that
+    // fires. One bound, not two.
+    if (!/^\d+$/.test(flags.quantity) || quantity < 1 || quantity > 2_147_483_647) {
+      throw new UsageError('--quantity must be a whole number from 1 to 2147483647.');
+    }
   }
   if (flags.externalRef && !flags.externalSystem) {
     throw new UsageError('--external-ref requires --external-system (the reference needs a namespace to mean anything).');
