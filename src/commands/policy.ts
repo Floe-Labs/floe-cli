@@ -245,7 +245,7 @@ export async function policyCreateCommand(flags: PolicyFlags): Promise<void> {
   const team = flags.team === true;
   const kind = flags.kind;
   if (!kind) {
-    throw new UsageError('Missing --kind. Agent policies: task, api, vendor; --team also allows session.');
+    throw new UsageError('Missing --kind. Agent policies: task, api, vendor; --team also allows session and customer.');
   }
   // 'customer' is team-only, mirroring the API's createTeamPolicySchema: an
   // agent-scoped customer cap would count one agent's spend while reading as
@@ -256,7 +256,7 @@ export async function policyCreateCommand(flags: PolicyFlags): Promise<void> {
   if (!validKinds.includes(kind)) {
     throw new UsageError(
       team
-        ? `Invalid --kind "${kind}". Team kinds: session, task, api, vendor.`
+        ? `Invalid --kind "${kind}". Team kinds: session, task, api, vendor, customer.`
         : `Invalid --kind "${kind}". Agent kinds: task, api, vendor (the agent session cap is \`floe budget set\`).`,
     );
   }
@@ -269,7 +269,14 @@ export async function policyCreateCommand(flags: PolicyFlags): Promise<void> {
     if (flags.match) throw new UsageError('session policies take no --match — they cap all spend.');
   } else {
     if (!flags.match) {
-      const what = kind === 'task' ? 'task id' : kind === 'api' ? 'host or .suffix' : 'payee 0x address';
+      const what =
+        kind === 'task'
+          ? 'task id'
+          : kind === 'api'
+            ? 'host or .suffix'
+            : kind === 'customer'
+              ? 'customer id'
+              : 'payee 0x address';
       throw new UsageError(`--kind ${kind} requires --match <${what}>.`);
     }
     matchKey = flags.match.toLowerCase();
@@ -470,7 +477,7 @@ export const policyDef: CommandDef = {
   name: 'policy',
   summary: 'list | create | update | revoke | reset | chain | test — spend policies',
   usage: `Usage: floe policy [list] [--agent <ref> | --team] [--include-revoked]
-       floe policy create --kind <task|api|vendor|session> --limit <usd> [--match <key>]
+       floe policy create --kind <task|api|vendor|session|customer> --limit <usd> [--match <key>]
                           [--window <dur>|once] [--action block|suspend_agent]
                           [--label <text>] [--agent <ref> | --team]
        floe policy update <policyId> [--limit <usd>] [--window <dur>]
@@ -491,6 +498,7 @@ active agent, --agent <name|id>, or the whole account with --team.
            --kind api     cap a host or suffix       --match api.host.com | .host.com
            --kind vendor  cap a payee wallet         --match 0x…
            --kind session account-wide cap           --team only, no --match
+           --kind customer cap one end-client's spend --team only, --match <customer-id>
            --window is a rolling duration (24h, 7d) or "once" for a single-shot
            budget; default 24h rolling. --action suspend_agent makes a breach
            suspend the whole agent instead of declining one call.
