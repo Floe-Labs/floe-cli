@@ -380,6 +380,93 @@ describe('outcomes void', () => {
   });
 });
 
+describe('outcomes reverse', () => {
+  const BILLED = { ...BOUND, status: 'confirmed', confirmedAt: '2026-09-16T09:00:00Z', billedInPeriodId: 42 };
+  const REVERSED = { ...BILLED, eventId: 'oev_aabbccddeeff0011', status: 'reversed' };
+
+  /** Reversing credits the customer; a reason reconstructed later is a reason nobody wrote. */
+  it('refuses without --reason before any network call', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await main(['outcomes', 'reverse', 'oev_00112233445566aa', '--yes']);
+
+    expect(stderr).toContain('--reason is required');
+    expect(process.exitCode).toBe(2);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  /** It moves money, so a script without --yes must refuse — never hang on a prompt. */
+  it('refuses without --yes when there is no TTY, after reading but before writing', async () => {
+    const wasTTY = process.stdin.isTTY;
+    process.stdin.isTTY = false;
+    const fetchMock = vi.fn(async () => jsonResponse(detailBody(BILLED)));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await main(['outcomes', 'reverse', 'oev_00112233445566aa', '--reason', 'meeting never happened']);
+    } finally {
+      process.stdin.isTTY = wasTTY;
+    }
+
+    expect(stderr).toContain('re-run with --yes');
+    expect(process.exitCode).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].method).toBe('GET');
+  });
+
+  it('shows the claim and where the credit lands, then posts the reason as the note', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith('/reverse')) return jsonResponse({ outcome: { eventId: REVERSED.eventId } }, 201);
+      if (String(url).endsWith(REVERSED.eventId)) return jsonResponse(detailBody(REVERSED));
+      return jsonResponse(detailBody(BILLED));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await main(['outcomes', 'reverse', 'oev_00112233445566aa', '--reason', 'meeting never happened', '--yes']);
+
+    expect(process.exitCode ?? 0).toBe(0);
+    const [postUrl, postInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(String(postUrl)).toBe(`${API}/v1/developer/outcomes/oev_00112233445566aa/reverse`);
+    expect(postInit.method).toBe('POST');
+    expect(JSON.parse(String(postInit.body))).toEqual({
+      idempotencyKey: 'cli:reverse:oev_00112233445566aa',
+      note: 'meeting never happened',
+    });
+    expect(stdout).toContain('meeting_booked');
+    expect(stdout).toContain('42');
+    expect(stdout).toContain("acme's next open billing period");
+    expect(stdout).toContain('Reversed oev_00112233445566aa');
+  });
+
+  it('points a never-billed claim at `floe outcomes void`', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => (
+      String(url).endsWith('/reverse')
+        ? jsonResponse({ error: 'outcome_claim_not_billed' }, 409)
+        : jsonResponse(detailBody(BOUND))
+    )));
+
+    await main(['outcomes', 'reverse', 'oev_00112233445566aa', '--reason', 'wrong', '--yes']);
+
+    expect(stderr).toContain('never billed');
+    expect(stderr).toContain('floe outcomes void oev_00112233445566aa');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('explains a conflicting write', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => (
+      String(url).endsWith('/reverse')
+        ? jsonResponse({ error: 'outcome_claim_conflict' }, 409)
+        : jsonResponse(detailBody(BILLED))
+    )));
+
+    await main(['outcomes', 'reverse', 'oev_00112233445566aa', '--reason', 'wrong', '--yes']);
+
+    expect(stderr).toContain('another write reached it first');
+    expect(stderr).toContain('floe outcomes get oev_00112233445566aa');
+    expect(process.exitCode).toBe(1);
+  });
+});
+
 describe('outcomes confirm-distinct', () => {
   it('resolves the collision as two real outcomes', async () => {
     const fetchMock = vi.fn(async () => jsonResponse({
