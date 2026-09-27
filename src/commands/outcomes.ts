@@ -457,16 +457,27 @@ export async function outcomesVoidCommand(arg: string | undefined, flags: Outcom
 
 export async function outcomesReverseCommand(arg: string | undefined, flags: OutcomesFlags): Promise<void> {
   // Before any network call, the same rule as void: a reversal moves money,
-  // and the reason is recorded with it.
-  if (!flags.reason) {
+  // and the reason is recorded with it. Whitespace is not a reason.
+  const reason = flags.reason?.trim();
+  if (!reason) {
     throw new UsageError('--reason is required — reversing a billed claim credits the customer, and the reason is recorded with it.');
   }
 
   const ctx = await devContext(flags);
   const eventId = await resolveClaimId(arg, flags, ctx);
 
-  // Read the claim first so the operator sees what they are reversing.
-  const claim = (await ctx.api.dev<DetailResponse>('GET', `/v1/developer/outcomes/${eventId}`)).outcome;
+  // Read the claim first so the operator sees what they are reversing. The
+  // detail route answers with the chain's CURRENT head; if the id given is an
+  // older event, the preview would show one claim while the POST targeted
+  // another. Refuse, and name the head, rather than let the two differ.
+  const detail = await ctx.api.dev<DetailResponse>('GET', `/v1/developer/outcomes/${eventId}`);
+  if (!detail.isHead) {
+    throw new UsageError(
+      `${sanitizeText(eventId)} is not the current claim — it was corrected by ${sanitizeText(detail.outcome.eventId)}. `
+      + `Review it (floe outcomes get ${sanitizeText(detail.outcome.eventId)}) and reverse that id instead.`,
+    );
+  }
+  const claim = detail.outcome;
   const customer = claim.binding.customerId ? sanitizeText(claim.binding.customerId) : 'the customer';
   if (!flags.json) {
     process.stdout.write(`${bold(`Reverse ${sanitizeText(claim.eventId)}`)}\n`);
@@ -491,9 +502,17 @@ export async function outcomesReverseCommand(arg: string | undefined, flags: Out
   try {
     res = await ctx.api.dev<WriteResponse>('POST', `/v1/developer/outcomes/${eventId}/reverse`, {
       idempotencyKey: idempotencyFor('reverse', eventId, flags),
-      note: flags.reason,
+      note: reason,
     });
   } catch (err) {
+    if (err instanceof ApiError && err.code === 'outcome_claim_reversed') {
+      throw new ApiError(
+        `${sanitizeText(eventId)} is already a reversal — a reversal is final.`,
+        err.status,
+        err.code,
+        `See it: floe outcomes get ${sanitizeText(eventId)}`,
+      );
+    }
     if (err instanceof ApiError && err.code === 'outcome_claim_not_billed') {
       throw new ApiError(
         `${sanitizeText(eventId)} was never billed, so there is nothing to reverse.`,

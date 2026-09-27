@@ -396,6 +396,44 @@ describe('outcomes reverse', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('refuses a whitespace-only --reason before any network call', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await main(['outcomes', 'reverse', 'oev_00112233445566aa', '--reason', '   ', '--yes']);
+
+    expect(stderr).toContain('--reason is required');
+    expect(process.exitCode).toBe(2);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  /** The preview must show the claim the POST targets: an older id resolves to
+   *  its chain's head, so reversing it would approve one claim and hit another. */
+  it('refuses an id that is not the current head, naming the head, and never posts', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(detailBody(BILLED, { requested: 'oev_99887766554433aa', isHead: false })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await main(['outcomes', 'reverse', 'oev_99887766554433aa', '--reason', 'wrong', '--yes']);
+
+    expect(stderr).toContain('is not the current claim');
+    expect(stderr).toContain(BILLED.eventId);
+    expect(process.exitCode).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // the read only
+  });
+
+  it('explains a reversal that is already final', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => (
+      String(url).endsWith('/reverse')
+        ? jsonResponse({ error: 'outcome_claim_reversed' }, 409)
+        : jsonResponse(detailBody(BILLED))
+    )));
+
+    await main(['outcomes', 'reverse', 'oev_00112233445566aa', '--reason', 'again', '--yes']);
+
+    expect(stderr).toContain('a reversal is final');
+    expect(process.exitCode).toBe(1);
+  });
+
   /** It moves money, so a script without --yes must refuse — never hang on a prompt. */
   it('refuses without --yes when there is no TTY, after reading but before writing', async () => {
     const wasTTY = process.stdin.isTTY;
@@ -422,7 +460,7 @@ describe('outcomes reverse', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await main(['outcomes', 'reverse', 'oev_00112233445566aa', '--reason', 'meeting never happened', '--yes']);
+    await main(['outcomes', 'reverse', 'oev_00112233445566aa', '--reason', '  meeting never happened  ', '--yes']);
 
     expect(process.exitCode ?? 0).toBe(0);
     const [postUrl, postInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
