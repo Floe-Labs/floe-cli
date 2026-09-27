@@ -1,4 +1,6 @@
+import { ApiError } from '../lib/api.js';
 import { expectArgs, str, type CommandDef } from '../lib/command.js';
+import { confirmAction } from '../lib/confirm.js';
 import { devContext, type DevContext } from '../lib/context.js';
 import { bold, dim, green, kv, ok, printJson, red, sanitizeText, UsageError, warn, yellow } from '../lib/output.js';
 import { table } from '../lib/table.js';
@@ -111,6 +113,7 @@ export interface OutcomesFlags {
   externalRef?: string;
   duplicateOf?: string;
   idempotencyKey?: string;
+  yes?: boolean;
 }
 
 // ─── Shared validation ─────────────────────────────────────────────────────
@@ -452,6 +455,88 @@ export async function outcomesVoidCommand(arg: string | undefined, flags: Outcom
   await printHead(ctx, res.outcome.eventId, flags);
 }
 
+export async function outcomesReverseCommand(arg: string | undefined, flags: OutcomesFlags): Promise<void> {
+  // Before any network call, the same rule as void: a reversal moves money,
+  // and the reason is recorded with it. Whitespace is not a reason.
+  const reason = flags.reason?.trim();
+  if (!reason) {
+    throw new UsageError('--reason is required — reversing a billed claim credits the customer, and the reason is recorded with it.');
+  }
+
+  const ctx = await devContext(flags);
+  const eventId = await resolveClaimId(arg, flags, ctx);
+
+  // Read the claim first so the operator sees what they are reversing. The
+  // detail route answers with the chain's CURRENT head; if the id given is an
+  // older event, the preview would show one claim while the POST targeted
+  // another. Refuse, and name the head, rather than let the two differ.
+  const detail = await ctx.api.dev<DetailResponse>('GET', `/v1/developer/outcomes/${eventId}`);
+  if (!detail.isHead) {
+    throw new UsageError(
+      `${sanitizeText(eventId)} is not the current claim — it was corrected by ${sanitizeText(detail.outcome.eventId)}. `
+      + `Review it (floe outcomes get ${sanitizeText(detail.outcome.eventId)}) and reverse that id instead.`,
+    );
+  }
+  const claim = detail.outcome;
+  const customer = claim.binding.customerId ? sanitizeText(claim.binding.customerId) : 'the customer';
+  if (!flags.json) {
+    process.stdout.write(`${bold(`Reverse ${sanitizeText(claim.eventId)}`)}\n`);
+    process.stdout.write(
+      `${kv([
+        ['Kind', sanitizeText(claim.outcomeKind)],
+        ['Quantity', String(claim.quantity)],
+        ['Billed in period', claim.billedInPeriodId !== null
+          ? String(claim.billedInPeriodId)
+          : dim('none on record — only a billed claim can be reversed')],
+        ['Client', customer],
+      ])}\n`,
+    );
+    process.stdout.write(
+      `${dim(`The closed statement does not change. A credit line for this reversal will be added to ${customer}'s next open billing period.`)}\n`,
+    );
+  }
+
+  await confirmAction(`reverse billed claim ${eventId} and credit ${customer}`, eventId, { yes: flags.yes });
+
+  let res: WriteResponse;
+  try {
+    res = await ctx.api.dev<WriteResponse>('POST', `/v1/developer/outcomes/${eventId}/reverse`, {
+      idempotencyKey: idempotencyFor('reverse', eventId, flags),
+      note: reason,
+    });
+  } catch (err) {
+    if (err instanceof ApiError && err.code === 'outcome_claim_reversed') {
+      throw new ApiError(
+        `${sanitizeText(eventId)} is already a reversal — a reversal is final.`,
+        err.status,
+        err.code,
+        `See it: floe outcomes get ${sanitizeText(eventId)}`,
+      );
+    }
+    if (err instanceof ApiError && err.code === 'outcome_claim_not_billed') {
+      throw new ApiError(
+        `${sanitizeText(eventId)} was never billed, so there is nothing to reverse.`,
+        err.status,
+        err.code,
+        `Retire it instead: floe outcomes void ${sanitizeText(eventId)} --reason "<why>"`,
+      );
+    }
+    if (err instanceof ApiError && err.code === 'outcome_claim_conflict') {
+      throw new ApiError(
+        `${sanitizeText(eventId)} changed while this ran — another write reached it first.`,
+        err.status,
+        err.code,
+        `See its current state: floe outcomes get ${sanitizeText(eventId)}`,
+      );
+    }
+    throw err;
+  }
+  if (!flags.json) {
+    process.stdout.write(`${ok(`Reversed ${sanitizeText(eventId)} — the credit line is priced within the hour`)}\n`);
+  }
+  await printHead(ctx, res.outcome.eventId, flags);
+}
+
 export async function outcomesConfirmDistinctCommand(flags: OutcomesFlags): Promise<void> {
   if (!flags.interaction) {
     throw new UsageError('--interaction <int_id> is required — a collision belongs to one call.');
@@ -488,13 +573,14 @@ export async function outcomesConfirmDistinctCommand(flags: OutcomesFlags): Prom
 
 export const outcomesDef: CommandDef = {
   name: 'outcomes',
-  summary: 'list | get | confirm | void | confirm-distinct — what a task produced',
+  summary: 'list | get | confirm | void | reverse | confirm-distinct — what a task produced',
   usage: `Usage: floe outcomes list             [filters] [--cursor <c>]
        floe outcomes get              <oev_id>
        floe outcomes confirm          <oev_id | --task <id> --kind <k>> [--quantity <n>]
                                       [--external-system <s> --external-ref <r>] [--reason <text>]
        floe outcomes void             <oev_id | --task <id> --kind <k>> --reason <text>
                                       [--duplicate-of <oev_id>]
+       floe outcomes reverse          <oev_id | --task <id> --kind <k>> --reason <text> [--yes]
        floe outcomes confirm-distinct --interaction <int_id> --kind <k> [--reason <text>]
 
 An outcome claim is what a task PRODUCED — a booked meeting, a qualified lead,
@@ -510,6 +596,11 @@ an invoice. They share a word and nothing else.
   confirm           Make a reported claim billable. Only operator/client
                     confirmations rate
   void              Retire a claim. --reason is required
+  reverse           Reverse a claim already billed on a closed statement.
+                    The statement never changes: a credit line is added to
+                    the customer's next open billing period. --reason is
+                    required; asks for confirmation unless --yes. A claim
+                    that was never billed cannot be reversed — void it
   confirm-distinct  Two claims of one kind on one call are BOTH real —
                     the other resolution is voiding one as a proven duplicate
 
@@ -564,6 +655,7 @@ Filters: --since --until --task --interaction --customer --campaign --kind
       externalRef: str(ctx, 'external-ref'),
       duplicateOf: str(ctx, 'duplicate-of'),
       idempotencyKey: str(ctx, 'idempotency-key'),
+      yes: ctx.yes,
     };
 
     if (subcommand === undefined || subcommand === 'list') {
@@ -579,12 +671,15 @@ Filters: --since --until --task --interaction --customer --campaign --kind
     } else if (subcommand === 'void') {
       expectArgs(ctx, 2);
       await outcomesVoidCommand(arg, flags);
+    } else if (subcommand === 'reverse') {
+      expectArgs(ctx, 2);
+      await outcomesReverseCommand(arg, flags);
     } else if (subcommand === 'confirm-distinct') {
       expectArgs(ctx, 1);
       await outcomesConfirmDistinctCommand(flags);
     } else {
       throw new UsageError(
-        `Unknown outcomes subcommand "${subcommand}". Use: list, get <oev_id>, confirm, void, confirm-distinct.`,
+        `Unknown outcomes subcommand "${subcommand}". Use: list, get <oev_id>, confirm, void, reverse, confirm-distinct.`,
       );
     }
   },
