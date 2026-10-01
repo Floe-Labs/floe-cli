@@ -447,6 +447,21 @@ describe('floe interactions show', () => {
     // And the paid total stays a label, not a figure.
     expect(stdout).toMatch(/Paid total\s+partial/);
   });
+
+  it('labels a leg the orchestrator paid for: its cost is inside the call total, not Floe-carried', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      jsonRes(200, {
+        ...DETAIL_BODY,
+        legs: [{ ...DETAIL_BODY.legs[1]!, legId: 4, captureSource: 'platform_webhook', reconciliationStatus: 'manual',
+          statusReason: 'orchestrator_paid', costOwner: 'orchestrator', costRaw: null }],
+        links: [{ vendor: 'vapi', identifierKind: 'orchestrator_call', identifier: 'call-1', createdAt: '2026-09-10T10:00:00.000Z' }],
+      })));
+
+    await main(['interactions', 'show', 'int_00112233445566aa']);
+
+    expect(stdout).toContain('paid by vapi');
+    expect(stdout).not.toMatch(/\bfloe-carried\b/);
+  });
 });
 
 describe('floe interactions rollups', () => {

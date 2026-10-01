@@ -527,13 +527,20 @@ export async function interactionsShowCommand(id: string, flags: InteractionFlag
   }
 
   process.stdout.write(`\n${bold('Legs')}\n`);
+  // An orchestrator-paid leg (e.g. a Vapi-hosted LLM): the platform paid the
+  // vendor and billed you inside its call total, so it is never priced again.
+  const ownerLabel = (owner: string, links: { vendor: string; identifierKind: string }[]) => {
+    if (owner !== 'orchestrator') return 'floe-carried';
+    const platform = links.find((l) => l.identifierKind === 'orchestrator_call')?.vendor;
+    return `paid by ${platform ? sanitizeText(platform) : 'the platform'} (in call total)`;
+  };
   const legRows = res.legs.map((leg) => [
     stamp(leg.occurredAt),
     sanitizeText(leg.vendor),
     sanitizeText(leg.legKind),
     unitsCell(leg.units),
-    // A Floe-carried leg has no reconciliation of YOURS to report.
-    leg.costOwner === 'developer' ? statusCell(leg.reconciliationStatus) : dim('floe-carried'),
+    // A Floe-carried or orchestrator-paid leg has no reconciliation of YOURS to report.
+    leg.costOwner === 'developer' ? statusCell(leg.reconciliationStatus) : dim(ownerLabel(leg.costOwner, res.links)),
     leg.costRaw !== null ? rawToUsd(leg.costRaw) : dim('—'),
   ]);
   process.stdout.write(`${table(['OCCURRED', 'VENDOR', 'KIND', 'UNITS', 'STATUS', 'COST'], legRows)}\n`);
