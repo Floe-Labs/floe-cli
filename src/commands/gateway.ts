@@ -11,8 +11,8 @@ import { decodeChunks, headerLabel, validateGatewayFile, type ValidationReport }
  *
  * OFFLINE by default: the file never leaves the machine. The validator is the
  * API's own code, vendored (src/gateway/vendor/, scripts/sync-gateway-validator.sh),
- * so it gives the same answer as `--online` except the two checks that need
- * your account (printed as caveats). `--online` posts the file to
+ * so it gives the same answer as `--online` except the checks that need your
+ * account or connection (printed as caveats). `--online` posts the file to
  * POST /v1/developer/ext-gateway/validate (≤ 10 MiB).
  *
  * Neither mode prints a row's content: only header names, counts, reason
@@ -23,6 +23,8 @@ const ONLINE_MAX_BYTES = 10 * 1024 * 1024;
 export const OFFLINE_CAVEATS = [
   'offline: ids already imported on your account are not checked (run with --online)',
   'offline: people are not resolved against your account (run with --online)',
+  "offline: rows your account's Floe gateway already metered are not counted (run with --online)",
+  "offline: the connection's id mode is not checked (run with --online --connection <slug>)",
 ];
 
 interface OnlineExtras {

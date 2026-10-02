@@ -1774,7 +1774,7 @@ async function scan(format, text) {
       else rows2 += 1;
     }
     if (headers === null || headers.length === 0) throw new ExtGatewayError(422, "empty_file", "The file has no header row.");
-    const dupes = [...new Set(headers.map((h, i) => headers.indexOf(h) !== i ? headerLabel(h, i, format) : null).filter((x) => x !== null))];
+    const dupes = headers.map((h, i) => headers.indexOf(h) !== i ? `column ${i + 1}` : null).filter((x) => x !== null);
     if (dupes.length > 0) throw new ExtGatewayError(422, "duplicate_headers", `Repeated headers: ${dupes.join(", ")}.`);
     return { format, headers, rows: rows2 };
   }
@@ -1996,7 +1996,10 @@ function contractJsonSchema(version) {
     const names = [f.name, ...f.synonyms];
     if (f.required && f.name !== "id") allOf.push({ anyOf: names.map((n) => ({ required: [n] })) });
   }
-  allOf.push({ anyOf: [{ required: ["provider"] }, { properties: { model: { pattern: "^[^/]+/.+$" } } }] });
+  allOf.push({ anyOf: [
+    { required: ["provider"], properties: { provider: { type: "string", pattern: "\\S" } } },
+    { required: ["model"], properties: { model: { type: "string", pattern: "^[^/]*\\S[^/]*/.*\\S.*$" } } }
+  ] });
   return {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: `${CONTRACT_SCHEMA_BASE}/${version}`,

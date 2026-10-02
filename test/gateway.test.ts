@@ -51,7 +51,7 @@ afterEach(() => {
 });
 
 describe('floe gateway validate (offline)', () => {
-  it('a clean contract file validates offline, with no network call, and prints the two caveats', async () => {
+  it('a clean contract file validates offline, with no network call, and prints the four caveats', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     await main(['gateway', 'validate', file('ok.ndjson', ndjson(SAMPLE))]);
@@ -62,6 +62,8 @@ describe('floe gateway validate (offline)', () => {
     expect(stdout).toContain('valid: Floe would import every row');
     expect(stdout).toContain('ids already imported on your account are not checked');
     expect(stdout).toContain('people are not resolved against your account');
+    expect(stdout).toContain("rows your account's Floe gateway already metered are not counted");
+    expect(stdout).toContain("the connection's id mode is not checked");
   });
 
   it('lists the exact unmapped headers and refused rows by number, never a row value; exit 1', async () => {
@@ -72,7 +74,7 @@ describe('floe gateway validate (offline)', () => {
     expect(out.mode).toBe('offline');
     expect(out.headers.unmapped).toEqual(['prompt_text']);
     expect(out.refusedRows.rows).toEqual([{ row: 2, reason: 'missing_provider', field: 'provider' }]);
-    expect(out.caveats).toHaveLength(2);
+    expect(out.caveats).toHaveLength(4);
     for (const leak of [...EMAILS, 'req-001', 'req-003', 'SECRET PROMPT', '0.0012']) expect(stdout).not.toContain(leak);
   });
 
@@ -128,6 +130,16 @@ describe('CFO B1: a headerless CSV never prints row content', () => {
         expect(stdout).toContain('no_header_row');
         for (const leak of NAMES) expect(stdout, `${leak} ${extra.join(' ')}`).not.toContain(leak);
       }
+    }
+  });
+
+  it('repeated name-like cells in a headerless first row are reported by position only', async () => {
+    for (const extra of [[], ['--json']]) {
+      stdout = '';
+      await main(['gateway', 'validate', file('d.csv', 'task,John Smith,John Smith\ntask,Jane Doe,Jane Doe\n'), ...extra]);
+      expect(stdout).toContain('duplicate_headers');
+      expect(stdout).toContain('column 3');
+      expect(stdout, extra.join(' ')).not.toContain('John Smith');
     }
   });
 

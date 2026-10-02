@@ -227,12 +227,22 @@
         {
           "required": [
             "provider"
-          ]
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "pattern": "\\S"
+            }
+          }
         },
         {
+          "required": [
+            "model"
+          ],
           "properties": {
             "model": {
-              "pattern": "^[^/]+/.+$"
+              "type": "string",
+              "pattern": "^[^/]*\\S[^/]*/.*\\S.*$"
             }
           }
         }
