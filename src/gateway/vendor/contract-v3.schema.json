@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://credit-api.floelabs.xyz/v1/ext-gateway/contract/3",
+  "title": "Floe canonical gateway export, contract v3",
+  "description": "One gateway request: a line of the NDJSON form or a row of the CSV form.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "description": "The gateway's request id: the idempotency key. Required when the file carries ids; a file with none gets derived ids and its import declares a window.",
+      "type": [
+        "string"
+      ],
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "occurred_at": {
+      "description": "When the request happened: ISO 8601 with T, seconds, and Z or a ±HH:MM offset.",
+      "type": [
+        "string"
+      ],
+      "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(\\.\\d{1,9})?(Z|[+-](\\d{2}):(\\d{2}))$"
+    },
+    "timestamp": {
+      "description": "Synonym of occurred_at.",
+      "x-floe-synonym-of": "occurred_at",
+      "type": [
+        "string"
+      ],
+      "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(\\.\\d{1,9})?(Z|[+-](\\d{2}):(\\d{2}))$"
+    },
+    "model": {
+      "description": "The model as the gateway names it. `provider/model` also names the provider when `provider` is absent.",
+      "type": [
+        "string"
+      ],
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "provider": {
+      "description": "Who served it (lowercased). Optional when model reads `provider/model`; a row with neither is refused.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "cost": {
+      "description": "USD as the gateway computed it, not as billed: a decimal string. Graded D.",
+      "type": [
+        "string"
+      ],
+      "pattern": "^[0-9]+(\\.[0-9]+)?$",
+      "maxLength": 64
+    },
+    "estimated_cost": {
+      "description": "Synonym of cost.",
+      "x-floe-synonym-of": "cost",
+      "type": [
+        "string"
+      ],
+      "pattern": "^[0-9]+(\\.[0-9]+)?$",
+      "maxLength": 64
+    },
+    "person": {
+      "description": "The user: an email or an id (stored only as a pseudonymous person id).",
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "user": {
+      "description": "Synonym of person.",
+      "x-floe-synonym-of": "person",
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "api_key": {
+      "description": "The key's alias or hash.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "input_tokens": {
+      "description": "Input tokens: a non-negative integer.",
+      "type": [
+        "integer",
+        "string",
+        "null"
+      ],
+      "minimum": 0,
+      "pattern": "^[0-9]+$",
+      "x-floe-maximum": "9223372036854775807"
+    },
+    "prompt_tokens": {
+      "description": "Synonym of input_tokens.",
+      "x-floe-synonym-of": "input_tokens",
+      "type": [
+        "integer",
+        "string",
+        "null"
+      ],
+      "minimum": 0,
+      "pattern": "^[0-9]+$",
+      "x-floe-maximum": "9223372036854775807"
+    },
+    "output_tokens": {
+      "description": "Output tokens: a non-negative integer.",
+      "type": [
+        "integer",
+        "string",
+        "null"
+      ],
+      "minimum": 0,
+      "pattern": "^[0-9]+$",
+      "x-floe-maximum": "9223372036854775807"
+    },
+    "completion_tokens": {
+      "description": "Synonym of output_tokens.",
+      "x-floe-synonym-of": "output_tokens",
+      "type": [
+        "integer",
+        "string",
+        "null"
+      ],
+      "minimum": 0,
+      "pattern": "^[0-9]+$",
+      "x-floe-maximum": "9223372036854775807"
+    },
+    "task": {
+      "description": "Attribution; part of the slot only when the connection grain names it.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "campaign": {
+      "description": "Attribution; part of the slot only when the connection grain names it.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "customer": {
+      "description": "Attribution; part of the slot only when the connection grain names it.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "billed_by": {
+      "description": "Who bills the traffic; defaults to the provider. Never earns grade B on its own.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "cache_hit": {
+      "description": "The gateway answered from its cache (a true zero). Absent = false.",
+      "type": [
+        "boolean",
+        "string",
+        "null"
+      ],
+      "pattern": "^([Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$",
+      "x-floe-pattern-flags": "i"
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "required": [
+            "occurred_at"
+          ]
+        },
+        {
+          "required": [
+            "timestamp"
+          ]
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "required": [
+            "model"
+          ]
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "required": [
+            "cost"
+          ]
+        },
+        {
+          "required": [
+            "estimated_cost"
+          ]
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "required": [
+            "provider"
+          ]
+        },
+        {
+          "properties": {
+            "model": {
+              "pattern": "^[^/]+/.+$"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "x-floe-contract-version": 3,
+  "x-floe-templates": {
+    "ndjson": "floe-canonical-ndjson@3",
+    "csv": "floe-canonical-csv@1"
+  },
+  "x-floe-field-order": [
+    "id",
+    "occurred_at",
+    "model",
+    "provider",
+    "cost",
+    "person",
+    "api_key",
+    "input_tokens",
+    "output_tokens",
+    "task",
+    "campaign",
+    "customer",
+    "billed_by",
+    "cache_hit"
+  ],
+  "x-floe-rules": [
+    "A value is absent when its key is missing, JSON null, or blank text. Text is trimmed before any check.",
+    "Each field may be written under its name or a listed synonym; two names present with different values refuse the row (conflicting_<field>).",
+    "cost is a decimal STRING (digits, optional fraction; no sign, no exponent), never a JSON number. It is the gateway's own figure, graded D, not the vendor's bill.",
+    "occurred_at is ISO 8601 with T, seconds, and Z or a ±HH:MM offset, on a real calendar day.",
+    "input_tokens and output_tokens are non-negative integers, as JSON integers or digit strings, at most 9223372036854775807.",
+    "id: a file carries ids (a CSV id column; an NDJSON file whose first row has an id key) and then every row needs one, or carries none and gets derived ids: its import declares a window, and an overlapping window needs mode=replace (\"ids derived; window required\"). A row with an id in a file without ids is refused (unexpected_id).",
+    "provider may be omitted when model reads provider/model: the provider is the part before the first /, the model the rest. A row with neither is refused (missing_provider).",
+    "Any other key or header halts the import (unmapped_fields).",
+    "CSV form: the same names as headers, every value text, an empty cell absent. The NDJSON form is the reference."
+  ]
+}
