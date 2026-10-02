@@ -14,6 +14,7 @@ import { devkeysDef } from './devkeys.js';
 import { embedDef } from './embed.js';
 import { estimateDef } from './estimate.js';
 import { fundsDef } from './funds.js';
+import { gatewayDef } from './gateway.js';
 import { initDef } from './init.js';
 import { interactionsDef } from './interactions.js';
 import { keysDef } from './keys.js';
@@ -56,6 +57,7 @@ export const SECTIONS: Section[] = [
       interactionsDef,
       outcomesDef,
       actualsDef,
+      gatewayDef,
       ledgerDef,
       billingDef,
       accountDef,

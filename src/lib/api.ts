@@ -34,6 +34,8 @@ export class ApiError extends Error {
 
 interface RequestOptions {
   body?: unknown;
+  /** A body sent as is (a file), with its content type — never JSON-encoded. */
+  raw?: { body: Uint8Array; contentType: string };
   timeoutMs?: number;
 }
 
@@ -91,7 +93,7 @@ export class FloeApi {
     plane: 'developer' | 'agent' | 'public',
     method: string,
     path: string,
-    { body, timeoutMs = 30_000 }: RequestOptions = {},
+    { body, raw, timeoutMs = 30_000 }: RequestOptions = {},
   ): Promise<Response> {
     if (!key && plane !== 'public') {
       throw new ApiError(
@@ -106,8 +108,11 @@ export class FloeApi {
       'User-Agent': `floe-cli/${cliVersion()}`,
     };
     if (key) headers.Authorization = `Bearer ${key}`;
-    let payload: string | FormData | undefined;
-    if (body instanceof FormData) {
+    let payload: string | FormData | Uint8Array | undefined;
+    if (raw) {
+      headers['Content-Type'] = raw.contentType;
+      payload = raw.body;
+    } else if (body instanceof FormData) {
       payload = body;
     } else if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
@@ -156,6 +161,12 @@ export class FloeApi {
    */
   async devRaw(method: string, path: string, body?: unknown): Promise<Response> {
     return this.request(this.devKey, 'developer', method, path, { body });
+  }
+
+  /** Management plane with a raw body (a file upload such as a gateway export). Returns parsed JSON. */
+  async devFile<T>(method: string, path: string, body: Uint8Array, contentType: string): Promise<T> {
+    const res = await this.request(this.devKey, 'developer', method, path, { raw: { body, contentType }, timeoutMs: 120_000 });
+    return (await res.json()) as T;
   }
 
   /** Gateway / agent plane — floe_ agent key. Returns the raw Response so callers can read X-Floe-* headers. */
