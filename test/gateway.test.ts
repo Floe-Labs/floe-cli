@@ -95,6 +95,39 @@ describe('floe gateway validate (offline)', () => {
   });
 });
 
+describe('CFO B1: a headerless CSV never prints row content', () => {
+  const HEADERLESS = 'alice@acme.com,2026-09-02T09:15:00Z,gpt-4o,0.5\nbob@acme.com,2026-09-02T10:00:00Z,gpt-4o,0.25\n';
+
+  it('offline text and --json: no_header_row, no email', async () => {
+    const path = file('headerless.csv', HEADERLESS);
+    await main(['gateway', 'validate', path]);
+    expect(stdout).toContain('no_header_row');
+    await main(['gateway', 'validate', path, '--json']);
+    expect(process.exitCode).toBe(1);
+    expect(stdout).not.toContain('alice@acme.com');
+    expect(stdout).not.toContain('bob@acme.com');
+  });
+
+  it('a value-like header prints as its column number', async () => {
+    await main(['gateway', 'validate', file('h.csv', 'id,occurred_at,model,provider,cost,alice@acme.com\nr1,2026-09-02T09:15:00Z,gpt-4o,openai,0.5,x\n'), '--template', 'floe-canonical-csv@1']);
+    expect(stdout).toContain('Unmapped headers: column 6');
+    expect(stdout).not.toContain('alice@acme.com');
+  });
+
+  it('--online: an old-style report naming a value header is still masked', async () => {
+    const { report } = await validateGatewayFile({ text: async function* () { yield ndjson(SAMPLE); } });
+    const body = {
+      ...report, headers: { ...report.headers, unmapped: ['alice@acme.com'] },
+      duplicateIds: { ...report.duplicateIds, alreadyImported: { count: 0, rows: [], truncated: false, byConnection: {} } },
+      people: { distinct: 0, known: 0 }, meteredByFloe: { count: 0, rows: [], truncated: false }, idModeMismatch: null,
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => jsonRes(200, body)));
+    await main(['gateway', 'validate', file('ok.ndjson', ndjson(SAMPLE)), '--online']);
+    expect(stdout).toContain('Unmapped headers: key 1');
+    expect(stdout).not.toContain('alice@acme.com');
+  });
+});
+
 describe('floe gateway validate --online', () => {
   it('posts the raw file with the developer key and prints the account checks', async () => {
     const path = file('ok.ndjson', ndjson(SAMPLE));

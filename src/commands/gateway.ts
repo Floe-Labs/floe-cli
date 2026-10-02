@@ -2,7 +2,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { expectArgs, flag, str, type CommandDef } from '../lib/command.js';
 import { devContext } from '../lib/context.js';
 import { bold, dim, green, kv, ok, printJson, red, sanitizeText, UsageError, warn } from '../lib/output.js';
-import { decodeChunks, validateGatewayFile, type ValidationReport } from '../gateway/vendor/validator.mjs';
+import { decodeChunks, headerLabel, validateGatewayFile, type ValidationReport } from '../gateway/vendor/validator.mjs';
 
 /**
  * `floe gateway validate <file>` — check a gateway export against Floe's
@@ -30,6 +30,8 @@ interface OnlineExtras {
     alreadyImported: { count: number; rows: number[]; truncated: boolean; byConnection: Record<string, number> };
   };
   people: { distinct: number; known: number };
+  meteredByFloe: { count: number; rows: number[]; truncated: boolean };
+  idModeMismatch: { connection: 'present' | 'derived'; file: 'present' | 'derived' } | null;
 }
 type OnlineReport = Omit<ValidationReport, 'duplicateIds'> & OnlineExtras;
 
@@ -99,6 +101,9 @@ function render(r: ValidationReport | OnlineReport, mode: 'offline' | 'online'):
       out.push(`${bold('Ids already imported:')} ${a.count} (${rowList(a.rows, a.truncated)}; ${by})`);
     }
     out.push(`${bold('People:')} ${r.people.distinct} distinct, ${r.people.known} already known`);
+    const m = r.meteredByFloe;
+    if (m && m.count > 0) out.push(red(`Floe-metered rows (refused on import): ${m.count} (${rowList(m.rows, m.truncated)})`));
+    if (r.idModeMismatch) out.push(red(`Id mode: this connection's imports are ${r.idModeMismatch.connection}, this file's ids are ${r.idModeMismatch.file} (refused on import)`));
   }
   for (const n of r.notes) out.push(warn(sanitizeText(n)));
   if (mode === 'offline') for (const c of OFFLINE_CAVEATS) out.push(warn(c));
@@ -118,6 +123,9 @@ export async function gatewayValidateCommand(file: string, flags: GatewayValidat
     if (e.code === 'unknown_template') throw new UsageError(e.detail ?? 'Unknown template.');
     throw err;
   }
+  // CFO B1: mask value-like header names in text AND --json, whichever side produced the report.
+  const mask = (xs: string[]) => xs.map((x, i) => headerLabel(x, i, report.format));
+  report = { ...report, headers: { ...report.headers, unmapped: mask(report.headers.unmapped), ignored: mask(report.headers.ignored) } };
   const mode = flags.online ? 'online' : 'offline';
   if (flags.json) printJson({ mode, ...report, ...(mode === 'offline' ? { caveats: OFFLINE_CAVEATS } : {}) });
   else process.stdout.write(render(report, mode));

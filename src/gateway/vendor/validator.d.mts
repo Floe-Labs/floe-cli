@@ -23,6 +23,8 @@ export interface ValidationReport {
 }
 
 export function validateGatewayFile(input: { text: () => AsyncIterable<string>; template?: string }): Promise<{ report: ValidationReport }>;
+/** CFO B1: a header shown as itself only when it reads like a name; else `column <n>` / `key <n>`. */
+export function headerLabel(name: string, index: number, format: 'csv' | 'ndjson'): string;
 export function decodeChunks(bytes: AsyncIterable<Uint8Array>): AsyncGenerator<string>;
 export function contractJsonSchema(version: string): Record<string, unknown> | null;
 export const CONTRACT_VERSIONS: readonly number[];

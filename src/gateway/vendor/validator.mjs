@@ -1715,6 +1715,21 @@ function templateProfile(id) {
   }
   return { spec: { ...t.spec, defaultProvider: t.defaultProviderRequired ? DEFAULT_PROVIDER_STAND_IN : null }, source: "template" };
 }
+var NAME_RE = /^[A-Za-z_][A-Za-z0-9_. -]{0,63}$/;
+function headerLabel(name, index, format) {
+  const looksLikeName = NAME_RE.test(name) && !name.includes("@") && !DECIMAL_RE.test(name) && !INTEGER_RE.test(name) && !INSTANT_RE.test(name);
+  return looksLikeName ? name : `${format === "csv" ? "column" : "key"} ${index + 1}`;
+}
+function anyKnownName(format, given) {
+  const out = /* @__PURE__ */ new Set();
+  const specs = [...listExtGatewayTemplates().map((t) => t.spec), ...given ? [given] : []].filter((x) => x.format === format);
+  for (const spec of specs) {
+    for (const n of knownFields(spec)) out.add(n);
+    for (const i of spec.ignoreList) out.add(i.field);
+    out.add("id");
+  }
+  return out;
+}
 async function detectFormat(text) {
   for await (const chunk of withoutBom(text)) {
     const t = chunk.trimStart();
@@ -1731,7 +1746,7 @@ async function scan(format, text) {
       else rows2 += 1;
     }
     if (headers === null || headers.length === 0) throw new ExtGatewayError(422, "empty_file", "The file has no header row.");
-    const dupes = [...new Set(headers.filter((h, i) => headers.indexOf(h) !== i))];
+    const dupes = [...new Set(headers.map((h, i) => headers.indexOf(h) !== i ? headerLabel(h, i, format) : null).filter((x) => x !== null))];
     if (dupes.length > 0) throw new ExtGatewayError(422, "duplicate_headers", `Repeated headers: ${dupes.join(", ")}.`);
     return { format, headers, rows: rows2 };
   }
@@ -1815,6 +1830,9 @@ async function validateGatewayFile(input) {
     report.format = given?.spec.format ?? await detectFormat(input.text());
     const s = await scan(report.format, input.text());
     report.exportRowCount = s.rows;
+    if (s.format === "csv" && !s.headers.some((h) => anyKnownName("csv", given?.spec ?? null).has(h))) {
+      throw new ExtGatewayError(422, "no_header_row", "The first row is not a header row: none of its cells names a known field. Add the header row.");
+    }
     report.templates = await matchTemplates(s, input.text);
     report.bestTemplate = report.templates[0] ?? null;
     const best = report.bestTemplate ? listExtGatewayTemplates().find((t) => t.template === report.bestTemplate.template) : null;
@@ -1828,14 +1846,16 @@ async function validateGatewayFile(input) {
     const known = knownFields(spec);
     const ignored = new Set(spec.ignoreList.map((i) => i.field));
     report.headers.mapped = s.headers.filter((h) => known.has(h));
-    report.headers.ignored = s.headers.filter((h) => !known.has(h) && ignored.has(h));
-    report.headers.unmapped = s.headers.filter((h) => !known.has(h) && !ignored.has(h));
+    const label = (h) => headerLabel(h, s.headers.indexOf(h), s.format);
+    const unmapped2 = s.headers.filter((h) => !known.has(h) && !ignored.has(h));
+    report.headers.ignored = s.headers.filter((h) => !known.has(h) && ignored.has(h)).map(label);
+    report.headers.unmapped = unmapped2.map(label);
     report.headers.missingRequired = missingRequired(spec, new Set(s.headers), false);
     if (report.headers.missingRequired.length > 0) {
       report.notes.push("rows not checked: required fields are missing");
       return { report: finish(report), idRows, people };
     }
-    const reading = { ...spec, ignoreList: [...spec.ignoreList, ...report.headers.unmapped.map((field) => ({ field, justification: "validator" }))] };
+    const reading = { ...spec, ignoreList: [...spec.ignoreList, ...unmapped2.map((field) => ({ field, justification: "validator" }))] };
     await checkRows(reading, input.text(), report, idRows, people);
   } catch (err) {
     const fe = fileErrorOf(err);
@@ -1968,5 +1988,6 @@ export {
   LIST_LIMIT,
   contractJsonSchema,
   decodeChunks,
+  headerLabel,
   validateGatewayFile
 };
