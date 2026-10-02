@@ -108,10 +108,33 @@ describe('CFO B1: a headerless CSV never prints row content', () => {
     expect(stdout).not.toContain('bob@acme.com');
   });
 
-  it('a value-like header prints as its column number', async () => {
+  it('a value-like cell in the first row makes it data: no_header_row, nothing echoed', async () => {
     await main(['gateway', 'validate', file('h.csv', 'id,occurred_at,model,provider,cost,alice@acme.com\nr1,2026-09-02T09:15:00Z,gpt-4o,openai,0.5,x\n'), '--template', 'floe-canonical-csv@1']);
-    expect(stdout).toContain('Unmapped headers: column 6');
+    expect(stdout).toContain('no_header_row');
     expect(stdout).not.toContain('alice@acme.com');
+  });
+
+  it('QA 1 repros: no cell of a headerless first row appears in text or --json', async () => {
+    const NAMES = ['John Smith', 'Project Falcon', 'req-1', 'gpt-4o', '0.0123'];
+    const repros = [
+      'req-1,2026-09-01T00:00:00Z,user,gpt-4o,0.0123,John Smith,Project Falcon\nreq-2,2026-09-01T01:00:00Z,user,gpt-4o,0.02,Jane Doe,Project Falcon\n',
+      'task,John Smith,Project Falcon Q4,0.0123\ntask,Jane Doe,Project Falcon Q4,0.5\n',
+    ];
+    for (const [i, csv] of repros.entries()) {
+      const path = file(`qa${i}.csv`, csv);
+      for (const extra of [[], ['--json'], ['--template', 'floe-canonical-csv@1']]) {
+        stdout = '';
+        await main(['gateway', 'validate', path, ...extra]);
+        expect(stdout).toContain('no_header_row');
+        for (const leak of NAMES) expect(stdout, `${leak} ${extra.join(' ')}`).not.toContain(leak);
+      }
+    }
+  });
+
+  it('a name-only first row that is mostly unknown prints positions, not names', async () => {
+    await main(['gateway', 'validate', file('n.csv', 'task,John Smith,Project Falcon\nx,y,z\n'), '--template', 'floe-canonical-csv@1', '--json']);
+    expect(JSON.parse(stdout).headers.unmapped).toEqual(['column 2', 'column 3']);
+    expect(stdout).not.toContain('John Smith');
   });
 
   it('--online: an old-style report naming a value header is still masked', async () => {

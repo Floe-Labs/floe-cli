@@ -1720,6 +1720,34 @@ function headerLabel(name, index, format) {
   const looksLikeName = NAME_RE.test(name) && !name.includes("@") && !DECIMAL_RE.test(name) && !INTEGER_RE.test(name) && !INSTANT_RE.test(name);
   return looksLikeName ? name : `${format === "csv" ? "column" : "key"} ${index + 1}`;
 }
+var KNOWN_PROVIDERS = /* @__PURE__ */ new Set([
+  "openai",
+  "anthropic",
+  "google",
+  "gemini",
+  "vertex",
+  "vertex_ai",
+  "bedrock",
+  "azure",
+  "mistral",
+  "cohere",
+  "groq",
+  "together",
+  "together_ai",
+  "fireworks",
+  "fireworks_ai",
+  "openrouter",
+  "deepseek",
+  "xai",
+  "perplexity",
+  "meta",
+  "ollama"
+]);
+var MODEL_RE = /^(gpt|claude|gemini|llama|mistral|mixtral|codestral|command|deepseek|grok|qwen|phi|o[1-9]|text-embedding|whisper|tts|dall-e)([-.:_][\w.:-]*)?$/i;
+function looksLikeValue(cell) {
+  const c = cell.trim();
+  return c.includes("@") || DECIMAL_RE.test(c) || INTEGER_RE.test(c) || INSTANT_RE.test(c) || /^\d{4}-\d{2}-\d{2}/.test(c) || /^[^/\s]+\/[^\s]+$/.test(c) || KNOWN_PROVIDERS.has(c.toLowerCase()) || MODEL_RE.test(c);
+}
 function anyKnownName(format, given) {
   const out = /* @__PURE__ */ new Set();
   const specs = [...listExtGatewayTemplates().map((t) => t.spec), ...given ? [given] : []].filter((x) => x.format === format);
@@ -1830,7 +1858,8 @@ async function validateGatewayFile(input) {
     report.format = given?.spec.format ?? await detectFormat(input.text());
     const s = await scan(report.format, input.text());
     report.exportRowCount = s.rows;
-    if (s.format === "csv" && !s.headers.some((h) => anyKnownName("csv", given?.spec ?? null).has(h))) {
+    const knownNames = anyKnownName(s.format, given?.spec ?? null);
+    if (s.format === "csv" && (s.headers.some(looksLikeValue) || !s.headers.some((h) => knownNames.has(h)))) {
       throw new ExtGatewayError(422, "no_header_row", "The first row is not a header row: none of its cells names a known field. Add the header row.");
     }
     report.templates = await matchTemplates(s, input.text);
@@ -1846,7 +1875,9 @@ async function validateGatewayFile(input) {
     const known = knownFields(spec);
     const ignored = new Set(spec.ignoreList.map((i) => i.field));
     report.headers.mapped = s.headers.filter((h) => known.has(h));
-    const label = (h) => headerLabel(h, s.headers.indexOf(h), s.format);
+    const genuine = s.headers.filter((h) => knownNames.has(h)).length * 2 >= s.headers.length;
+    const position = (i) => `${s.format === "csv" ? "column" : "key"} ${i + 1}`;
+    const label = (h) => genuine ? headerLabel(h, s.headers.indexOf(h), s.format) : position(s.headers.indexOf(h));
     const unmapped2 = s.headers.filter((h) => !known.has(h) && !ignored.has(h));
     report.headers.ignored = s.headers.filter((h) => !known.has(h) && ignored.has(h)).map(label);
     report.headers.unmapped = unmapped2.map(label);
