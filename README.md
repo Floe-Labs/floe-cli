@@ -83,6 +83,7 @@ floe test --voice           # STT → LLM → TTS: three legs, one key, one bill
 | `floe interactions` | list \| show \| rollups — what one task (call or job) actually cost, every vendor leg joined |
 | `floe outcomes` | list \| get \| confirm \| void \| reverse \| confirm-distinct — what a task produced, bound to the call |
 | `floe actuals` | legs \| calls \| rollups \| findings \| connections \| connect \| verify \| invoices — reconciled vendor cost |
+| `floe gateway` | validate &lt;file&gt; — check a gateway export against the canonical contract before importing; offline by default (the file never leaves your machine), `--online` adds your account's checks; never prints row content; import &lt;slug&gt; &lt;file&gt; — import an export into a connection (names payers held for lack of a settlement mode); settlement-modes &lt;slug&gt; — declared modes + seeded defaults; declare-mode &lt;slug&gt; &lt;billed-by&gt; &lt;mode&gt; — declare, flip or remove (`none`) a payer's settlement mode (records it; prints how many held rows can now be released); release-held &lt;slug&gt; — preview held rows and what a release would move (releasing is dashboard-only, by an owner or admin) |
 | `floe ledger` | Cross-source spend ledger, grouped |
 | `floe billing` | mtd \| invoice \| export \| charges — billing and exports |
 | `floe account` | show \| rename — account identity |
@@ -154,6 +155,8 @@ pnpm typecheck
 pnpm test
 node dist/bin.js --help
 ```
+
+`src/gateway/vendor/` is generated from floe-monorepo (the gateway-export validator and the contract's JSON Schema): after a contract change run `FLOE_MONOREPO=../floe-monorepo scripts/sync-gateway-validator.sh`; `test/gateway-vendor.test.ts` fails while the copy is stale.
 
 Merging to `main` publishes to npm automatically when `package.json` has a new version.
 
