@@ -184,3 +184,59 @@ describe('floe gateway import <slug> <file>', () => {
     expect(JSON.parse(stdout)).toEqual(body);
   });
 });
+
+describe('floe gateway release-held <slug> (preview only)', () => {
+  const group = (billedBy: string, mode: string | null, rows: number, micro: string, display: string, periods: object[]) =>
+    ({ billedBy, costSource: 'gateway_computed', mode, releasable: mode !== null, rows, cost: { micro, display }, periods });
+  const PREVIEW = {
+    held: [
+      group('acme', 'invoiced', 3, '4000000', '$4.00', [{ period: '2026-09', locked: true }, { period: '2026-10', locked: false }]),
+      group('beta', 'bucket', 2, '1500000', '$1.50', [{ period: '2026-10', locked: false }]),
+      group('gamma', null, 1, '250000', '$0.25', [{ period: '2026-10', locked: false }]),
+    ],
+    releasable: { rows: 5, cost: { micro: '5500000', display: '$5.50' }, periods: [{ period: '2026-09', locked: true }, { period: '2026-10', locked: false }] },
+  };
+
+  it('prints the held groups, the releasable total, and that release is dashboard-only; GET only', async () => {
+    const fetchMock = stubRoutes({ 'GET /v1/developer/ext-gateway/connections/posthog/held': () => jsonResponse(PREVIEW) });
+    await main(['gateway', 'release-held', 'posthog']);
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(stdout).toMatch(/acme\s+gateway_computed\s+invoiced\s+3\s+\$4\.00\s+2026-09 \(locked\), 2026-10/);
+    expect(stdout).toMatch(/gamma\s+gateway_computed\s+undeclared\s+1\s+\$0\.25/);
+    expect(stdout).toContain('Releasable now: 5 rows, $5.50, into 2026-09 (locked), 2026-10');
+    expect(stdout).toContain("Release these in the dashboard: Settings → Gateway connections (an owner or admin signed in). The CLI can't release held spend.");
+  });
+
+  it('--billed-by narrows the groups and totals only those payers\' releasable rows', async () => {
+    stubRoutes({ 'GET /v1/developer/ext-gateway/connections/posthog/held': () => jsonResponse(PREVIEW) });
+    await main(['gateway', 'release-held', 'posthog', '--billed-by', 'Beta,gamma']);
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(stdout).not.toContain('acme');
+    expect(stdout).toContain('Releasable now: 2 rows, $1.50, into 2026-10');
+  });
+
+  it('--json prints the API response as is', async () => {
+    stubRoutes({ 'GET /v1/developer/ext-gateway/connections/posthog/held': () => jsonResponse(PREVIEW) });
+    await main(['gateway', 'release-held', 'posthog', '--json']);
+    expect(JSON.parse(stdout)).toEqual(PREVIEW);
+  });
+
+  it('nothing held: says so, with no dashboard line', async () => {
+    stubRoutes({
+      'GET /v1/developer/ext-gateway/connections/posthog/held': () =>
+        jsonResponse({ held: [], releasable: { rows: 0, cost: { micro: '0', display: '$0.00' }, periods: [] } }),
+    });
+    await main(['gateway', 'release-held', 'posthog']);
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(stdout).toContain('No held rows on posthog.');
+    expect(stdout).not.toContain('dashboard');
+  });
+
+  it('takes no --yes-style write flags: an extra argument is a usage error', async () => {
+    const fetchMock = stubRoutes({});
+    await main(['gateway', 'release-held', 'posthog', 'now']);
+    expect(process.exitCode).toBe(2);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

@@ -3,6 +3,7 @@ import { expectArgs, flag, str, type CommandDef } from '../lib/command.js';
 import { devContext } from '../lib/context.js';
 import { bold, dim, green, kv, ok, printJson, red, sanitizeText, UsageError, warn } from '../lib/output.js';
 import { decodeChunks, headerLabel, validateGatewayFile, type ValidationReport } from '../gateway/vendor/validator.mjs';
+import { gatewayReleaseHeldCommand } from './gateway-held.js';
 import { gatewayImportCommand } from './gateway-import.js';
 import { gatewayDeclareModeCommand, gatewaySettlementModesCommand } from './gateway-settlement.js';
 
@@ -138,11 +139,12 @@ export async function gatewayValidateCommand(file: string, flags: GatewayValidat
 
 export const gatewayDef: CommandDef = {
   name: 'gateway',
-  summary: 'validate <file>, import <slug> <file>, settlement-modes <slug>, declare-mode — gateway exports and payer settlement modes',
+  summary: 'validate <file>, import <slug> <file>, settlement-modes <slug>, declare-mode, release-held <slug> — gateway exports, payer settlement modes, held rows',
   usage: `Usage: floe gateway validate <file> [--online] [--template <id>] [--connection <slug>]
        floe gateway import <slug> <file> [--window-start <iso>] [--window-end <iso>] [--replace]
        floe gateway settlement-modes <slug>
        floe gateway declare-mode <slug> <billed-by> <invoiced|bucket|final_at_settlement|none> [--cost-source <s>]
+       floe gateway release-held <slug> [--billed-by a,b]
 
 Check a gateway export (NDJSON or CSV) against Floe's canonical contract
 (floe-canonical-ndjson@3, floe-canonical-csv@1) or a built-in template, before
@@ -173,6 +175,12 @@ declare-mode <slug> <billed-by> <mode>  Declare or flip how a payer's spend
                      settles; "none" removes the declaration. Only records
                      the mode: prints how many held rows can now be released.
   --cost-source <s>    vendor_reported or gateway_computed (default: either).
+
+release-held <slug>  PREVIEW the held rows: by payer, cost source and mode,
+                     with what a release would move now (locked periods
+                     marked). Releasing is done in the dashboard by a
+                     signed-in owner or admin; the CLI never releases.
+  --billed-by a,b      Only these payers.
 `,
   options: {
     online: { type: 'boolean' },
@@ -182,6 +190,7 @@ declare-mode <slug> <billed-by> <mode>  Declare or flip how a payer's spend
     'window-end': { type: 'string' },
     replace: { type: 'boolean' },
     'cost-source': { type: 'string' },
+    'billed-by': { type: 'string' },
   },
   run: async (ctx) => {
     const [subcommand, file] = ctx.args;
@@ -206,8 +215,14 @@ declare-mode <slug> <billed-by> <mode>  Declare or flip how a payer's spend
       await gatewayDeclareModeCommand(slug, a, b, { apiUrl: ctx.apiUrl, json: ctx.json, costSource: str(ctx, 'cost-source') });
       return;
     }
+    if (subcommand === 'release-held') {
+      expectArgs(ctx, 2);
+      if (!slug) throw new UsageError('Usage: floe gateway release-held <slug> [--billed-by a,b].');
+      await gatewayReleaseHeldCommand(slug, { apiUrl: ctx.apiUrl, json: ctx.json, billedBy: str(ctx, 'billed-by') });
+      return;
+    }
     if (subcommand !== 'validate') {
-      throw new UsageError(`Unknown gateway subcommand "${subcommand ?? ''}". Use: validate <file>, import <slug> <file>, settlement-modes <slug>, declare-mode <slug> <billed-by> <mode>.`);
+      throw new UsageError(`Unknown gateway subcommand "${subcommand ?? ''}". Use: validate <file>, import <slug> <file>, settlement-modes <slug>, declare-mode <slug> <billed-by> <mode>, release-held <slug>.`);
     }
     expectArgs(ctx, 2);
     if (!file) throw new UsageError('Name the export file: floe gateway validate <file>.');
