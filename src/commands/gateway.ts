@@ -3,6 +3,8 @@ import { expectArgs, flag, str, type CommandDef } from '../lib/command.js';
 import { devContext } from '../lib/context.js';
 import { bold, dim, green, kv, ok, printJson, red, sanitizeText, UsageError, warn } from '../lib/output.js';
 import { decodeChunks, headerLabel, validateGatewayFile, type ValidationReport } from '../gateway/vendor/validator.mjs';
+import { gatewayImportCommand } from './gateway-import.js';
+import { gatewayDeclareModeCommand, gatewaySettlementModesCommand } from './gateway-settlement.js';
 
 /**
  * `floe gateway validate <file>` — check a gateway export against Floe's
@@ -136,8 +138,11 @@ export async function gatewayValidateCommand(file: string, flags: GatewayValidat
 
 export const gatewayDef: CommandDef = {
   name: 'gateway',
-  summary: 'validate <file> — check a gateway export before importing it',
+  summary: 'validate <file>, import <slug> <file>, settlement-modes <slug>, declare-mode — gateway exports and payer settlement modes',
   usage: `Usage: floe gateway validate <file> [--online] [--template <id>] [--connection <slug>]
+       floe gateway import <slug> <file> [--window-start <iso>] [--window-end <iso>] [--replace]
+       floe gateway settlement-modes <slug>
+       floe gateway declare-mode <slug> <billed-by> <invoiced|bucket|final_at_settlement|none> [--cost-source <s>]
 
 Check a gateway export (NDJSON or CSV) against Floe's canonical contract
 (floe-canonical-ndjson@3, floe-canonical-csv@1) or a built-in template, before
@@ -154,15 +159,56 @@ names, counts, reason codes and row numbers.
 Valid = every header mapped, no refused or repeated row, and Floe's row count
 equals the export's. Exit code 1 when the file is not valid.
 JSON Schema of the contract: https://credit-api.floelabs.xyz/v1/ext-gateway/contract/3
+
+import <slug> <file>   Import one export (≤ 10 MiB) into a connection, all-or-nothing.
+  --window-start/--window-end <iso>  The window (an id-less profile needs one).
+  --replace            Supersede the imports of an overlapping window.
+  Rows whose payer (billed_by) has no settlement mode import held, off the
+  ledger; the output names those payers.
+
+settlement-modes <slug>  The connection's declared settlement modes and the
+                     seeded defaults (each "default, unverified").
+
+declare-mode <slug> <billed-by> <mode>  Declare or flip how a payer's spend
+                     settles; "none" removes the declaration. Releases that
+                     payer's held rows into the ledger, with no re-upload.
+  --cost-source <s>    vendor_reported or gateway_computed (default: either).
 `,
   options: {
     online: { type: 'boolean' },
     template: { type: 'string' },
     connection: { type: 'string' },
+    'window-start': { type: 'string' },
+    'window-end': { type: 'string' },
+    replace: { type: 'boolean' },
+    'cost-source': { type: 'string' },
   },
   run: async (ctx) => {
     const [subcommand, file] = ctx.args;
-    if (subcommand !== 'validate') throw new UsageError(`Unknown gateway subcommand "${subcommand ?? ''}". Use: validate <file>.`);
+    const [, slug, a, b] = ctx.args;
+    if (subcommand === 'import') {
+      expectArgs(ctx, 3);
+      if (!slug || !a) throw new UsageError('Usage: floe gateway import <slug> <file>.');
+      await gatewayImportCommand(slug, a, {
+        apiUrl: ctx.apiUrl, json: ctx.json, replace: flag(ctx, 'replace'), windowStart: str(ctx, 'window-start'), windowEnd: str(ctx, 'window-end'),
+      });
+      return;
+    }
+    if (subcommand === 'settlement-modes') {
+      expectArgs(ctx, 2);
+      if (!slug) throw new UsageError('Usage: floe gateway settlement-modes <slug>.');
+      await gatewaySettlementModesCommand(slug, { apiUrl: ctx.apiUrl, json: ctx.json });
+      return;
+    }
+    if (subcommand === 'declare-mode') {
+      expectArgs(ctx, 4);
+      if (!slug || !a || !b) throw new UsageError('Usage: floe gateway declare-mode <slug> <billed-by> <invoiced|bucket|final_at_settlement|none>.');
+      await gatewayDeclareModeCommand(slug, a, b, { apiUrl: ctx.apiUrl, json: ctx.json, costSource: str(ctx, 'cost-source') });
+      return;
+    }
+    if (subcommand !== 'validate') {
+      throw new UsageError(`Unknown gateway subcommand "${subcommand ?? ''}". Use: validate <file>, import <slug> <file>, settlement-modes <slug>, declare-mode <slug> <billed-by> <mode>.`);
+    }
     expectArgs(ctx, 2);
     if (!file) throw new UsageError('Name the export file: floe gateway validate <file>.');
     await gatewayValidateCommand(file, {
