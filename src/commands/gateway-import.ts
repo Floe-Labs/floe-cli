@@ -63,7 +63,7 @@ export async function gatewayImportCommand(slug: string, file: string, flags: Ga
   ];
   const held = i.quarantinedPayer;
   if (held && held.rows > 0) {
-    out.push(warn(`${held.rows} rows (${sanitizeText(held.cost.display)}) held: payers with no declared settlement mode (${held.billedBy.map(sanitizeText).join(', ')}). Declare them with floe gateway declare-mode ${sanitizeText(slug)} <billed-by> <mode>.`));
+    out.push(warn(`${held.rows} rows (${sanitizeText(held.cost.display)}) held: payers with no declared settlement mode (${held.billedBy.map(sanitizeText).join(', ')}). Declare them with floe gateway declare-mode ${sanitizeText(slug)} <billed-by> <mode>, then release them with floe gateway release-held ${sanitizeText(slug)}.`));
   }
   process.stdout.write(`${out.join('\n')}\n`);
 }

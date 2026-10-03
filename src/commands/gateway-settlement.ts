@@ -10,7 +10,9 @@ import { table } from '../lib/table.js';
  *
  * A declaration is a new profile version (POST …/profile-versions
  * `settlementModes`). Rows imported for a payer with no mode are held out of
- * the ledger; declaring that payer releases them, with no re-upload.
+ * the ledger. Declaring only records the mode: releasing the held rows is a
+ * separate owner/admin action (`floe gateway release-held`). The save reports
+ * what is now `releasable`.
  */
 
 export const SETTLEMENT_MODES = ['invoiced', 'bucket', 'final_at_settlement'] as const;
@@ -22,6 +24,7 @@ interface Declared { billedBy: string; costSource?: CostSource; mode: Mode }
 interface SeededDefault { billedBy: string; costSource: CostSource | null; mode: Mode; status: 'default_unverified' }
 interface Profile { version: number; settlementModes?: Declared[]; settlementModeDefaults?: SeededDefault[] }
 interface Connection { slug: string; profile: Profile }
+interface Releasable { rows: number; cost: { micro: string; display: string }; periods: Array<{ period: string; locked: boolean }> }
 
 export interface GatewaySettlementFlags {
   apiUrl?: string;
@@ -65,7 +68,7 @@ export async function gatewayDeclareModeCommand(slug: string, billedBy: string, 
   }
   const { api } = await devContext(flags);
   const entry = { billedBy, ...(flags.costSource ? { costSource: flags.costSource } : {}), mode };
-  const res = await api.dev<{ profile: Profile }>('POST', `/v1/developer/ext-gateway/connections/${encodeURIComponent(slug)}/profile-versions`, { settlementModes: [entry] });
+  const res = await api.dev<{ profile: Profile; releasable?: Releasable }>('POST', `/v1/developer/ext-gateway/connections/${encodeURIComponent(slug)}/profile-versions`, { settlementModes: [entry] });
   if (flags.json) {
     printJson(res);
     return;
@@ -82,8 +85,11 @@ export async function gatewayDeclareModeCommand(slug: string, billedBy: string, 
   ];
   if (mode === null) {
     lines.push(warn(`A seeded default applies to ${payer} if one covers it; otherwise its new rows import held (not on the ledger).`));
-  } else {
-    lines.push(`Rows held for ${payer} because it had no settlement mode are released into the ledger now, with no re-upload (a locked month's through a restatement in the next open period). The API does not return a count of released rows.`);
+  }
+  const r = res.releasable;
+  if (r && r.rows > 0) {
+    const periods = r.periods.map((p) => `${clean(p.period)}${p.locked ? ' (locked)' : ''}`).join(', ');
+    lines.push(`${r.rows} held rows (${clean(r.cost.display)}) can now be released into ${periods} — run floe gateway release-held ${clean(slug)}`);
   }
   process.stdout.write(`${lines.join('\n')}\n`);
 }

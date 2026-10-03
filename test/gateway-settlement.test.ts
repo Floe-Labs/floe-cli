@@ -76,12 +76,15 @@ describe('floe gateway settlement-modes <slug>', () => {
 });
 
 describe('floe gateway declare-mode <slug> <billed-by> <mode>', () => {
-  it('posts the declaration and says held rows for that payer are released, with no re-upload', async () => {
+  it('posts the declaration and prints what can now be released, without claiming anything was released', async () => {
     let sent: unknown;
     stubRoutes({
       'POST /v1/developer/ext-gateway/connections/posthog/profile-versions': (init) => {
         sent = JSON.parse(String(init?.body));
-        return jsonResponse({ profile: profile(4, [{ billedBy: 'openrouter', costSource: 'gateway_computed', mode: 'bucket' }]) }, 201);
+        return jsonResponse({
+          profile: profile(4, [{ billedBy: 'openrouter', costSource: 'gateway_computed', mode: 'bucket' }]),
+          releasable: { rows: 12, cost: { micro: '4500000', display: '$4.50' }, periods: [{ period: '2026-09', locked: true }, { period: '2026-10', locked: false }] },
+        }, 201);
       },
     });
     await main(['gateway', 'declare-mode', 'posthog', 'OpenRouter', 'bucket', '--cost-source', 'gateway_computed']);
@@ -89,8 +92,18 @@ describe('floe gateway declare-mode <slug> <billed-by> <mode>', () => {
     expect(sent).toEqual({ settlementModes: [{ billedBy: 'OpenRouter', costSource: 'gateway_computed', mode: 'bucket' }] });
     expect(stdout).toContain('profile v4');
     expect(stdout).toMatch(/openrouter\s+gateway_computed\s+bucket/);
-    expect(stdout).toContain('released into the ledger');
-    expect(stdout).toContain('no re-upload');
+    expect(stdout).toContain('12 held rows ($4.50) can now be released into 2026-09 (locked), 2026-10 — run floe gateway release-held posthog');
+    expect(stdout).not.toMatch(/\breleased into the ledger\b/);
+  });
+
+  it('says nothing about releasing when nothing is releasable', async () => {
+    stubRoutes({
+      'POST /v1/developer/ext-gateway/connections/posthog/profile-versions': () =>
+        jsonResponse({ profile: profile(4, []), releasable: { rows: 0, cost: { micro: '0', display: '$0.00' }, periods: [] } }, 201),
+    });
+    await main(['gateway', 'declare-mode', 'posthog', 'openai', 'invoiced']);
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(stdout).not.toContain('release');
   });
 
   it('"none" removes the declaration (mode null) and omits costSource when not given', async () => {
@@ -105,7 +118,7 @@ describe('floe gateway declare-mode <slug> <billed-by> <mode>', () => {
     expect(process.exitCode ?? 0).toBe(0);
     expect(sent).toEqual({ settlementModes: [{ billedBy: 'openai', mode: null }] });
     expect(stdout).toContain('Removed');
-    expect(stdout).not.toContain('released into the ledger');
+    expect(stdout).not.toContain('release-held');
   });
 
   it('--json prints the new profile version', async () => {
@@ -151,7 +164,7 @@ describe('floe gateway import <slug> <file>', () => {
     expect(q.get('mode')).toBe('replace');
     expect(q.get('window_start')).toBe('2026-09-01T00:00:00Z');
     expect(q.get('window_end')).toBe('2026-10-01T00:00:00Z');
-    expect(stdout).toContain('3 rows ($4.00) held: payers with no declared settlement mode (acme-llm, vllm-box). Declare them with floe gateway declare-mode posthog <billed-by> <mode>.');
+    expect(stdout).toContain('3 rows ($4.00) held: payers with no declared settlement mode (acme-llm, vllm-box). Declare them with floe gateway declare-mode posthog <billed-by> <mode>, then release them with floe gateway release-held posthog.');
   });
 
   it('says nothing about held rows when none were held', async () => {

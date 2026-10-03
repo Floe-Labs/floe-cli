@@ -170,8 +170,8 @@ settlement-modes <slug>  The connection's declared settlement modes and the
                      seeded defaults (each "default, unverified").
 
 declare-mode <slug> <billed-by> <mode>  Declare or flip how a payer's spend
-                     settles; "none" removes the declaration. Releases that
-                     payer's held rows into the ledger, with no re-upload.
+                     settles; "none" removes the declaration. Only records
+                     the mode: prints how many held rows can now be released.
   --cost-source <s>    vendor_reported or gateway_computed (default: either).
 `,
   options: {
